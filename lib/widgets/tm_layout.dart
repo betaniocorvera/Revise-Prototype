@@ -525,7 +525,10 @@ class TMEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget box = AnimatedContainer(
+    // Held in its own name: the closure below must capture the decorated box,
+    // not the variable that is about to hold the focusable wrapping it — that
+    // reads as one widget building itself forever, which is a stack overflow.
+    final Widget content = AnimatedContainer(
       duration: Motion.fast,
       curve: Motion.ease,
       padding: padding,
@@ -550,9 +553,9 @@ class TMEntry extends StatelessWidget {
       child: child,
     );
 
-    if (onTap == null) return box;
+    if (onTap == null) return content;
 
-    box = TMFocusable(
+    return TMFocusable(
       onTap: onTap,
       semanticLabel: semanticLabel,
       builder: (BuildContext context, TMState s) => TMFocusRing(
@@ -562,10 +565,9 @@ class TMEntry extends StatelessWidget {
           duration: Motion.fast,
           curve: Motion.ease,
           transform: Matrix4.translationValues(0, s.hovered ? -1 : 0, 0),
-          child: box,
+          child: content,
         ),
       ),
     );
-    return box;
   }
 }

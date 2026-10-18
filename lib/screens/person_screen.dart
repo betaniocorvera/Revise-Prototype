@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Match detail.
+// The person page.
 //
 // The screen that has to survive the question "why am I seeing this person?".
 // Asymmetric: the person and the argument for them on the left, the score and
@@ -11,10 +11,10 @@
 //   * The self-description is set in Spectral italic. It is a quotation — the
 //     person talking about themselves — and it is the one place on an Operate
 //     screen where the serif earns its keep.
-//   * Sending a request confirms INLINE, in the panel that held the form. A
-//     modal would interrupt, cover the reasons the person just read, and be
-//     dismissed before it was understood. The form is replaced by its own
-//     outcome, with a reference and the next step.
+//   * Neither button sends anything from this page. "Send request" and
+//     "Message" both open the chat, because the whole transaction — the answer,
+//     the booking, the confirmation — has to live in one place, and a
+//     confirmation panel here would be a second place to check.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
@@ -25,55 +25,23 @@ import 'package:tutormatch/theme/app_theme.dart';
 import 'package:tutormatch/widgets/availability_grid.dart';
 import 'package:tutormatch/widgets/match_score_scale.dart';
 import 'package:tutormatch/widgets/tm_button.dart';
-import 'package:tutormatch/widgets/tm_field.dart';
 import 'package:tutormatch/widgets/tm_icon.dart';
 import 'package:tutormatch/widgets/tm_layout.dart';
 import 'package:tutormatch/widgets/tm_status.dart';
 
-class MatchDetailScreen extends StatefulWidget {
-  const MatchDetailScreen({required this.result, super.key});
+class PersonScreen extends StatelessWidget {
+  const PersonScreen({required this.result, super.key});
 
   final MatchResult result;
 
-  @override
-  State<MatchDetailScreen> createState() => _MatchDetailScreenState();
-}
-
-class _MatchDetailScreenState extends State<MatchDetailScreen> {
-  final TextEditingController _note = TextEditingController();
-  bool _sent = false;
-  String? _noteError;
-
-  @override
-  void dispose() {
-    _note.dispose();
-    super.dispose();
-  }
-
-  /// Deterministic, and computed from the characters rather than from
-  /// `String.hashCode`, which is seeded per run on the VM. The same person
-  /// always produces the same reference here, so a screenshot can be checked
-  /// against a second run of the app.
-  String get _reference {
-    int n = 0;
-    for (final int unit in widget.result.candidate.id.codeUnits) {
-      n = (n * 31 + unit) % 9000;
-    }
-    return 'TM-${n + 1000}';
-  }
-
-  void _send() {
-    final String note = _note.text.trim();
-    if (note.length < 12) {
-      setState(() => _noteError = 'Add a little more: which day suits you, and '
-          'what you want out of the first lesson. Notes like that get answered.');
-      return;
-    }
-    setState(() {
-      _noteError = null;
-      _sent = true;
-    });
-    AppStateScope.read(context).lastRequestReference = _reference;
+  void _openChat(BuildContext context, MatchResult result, {required bool asRequest}) {
+    final AppState state = AppStateScope.read(context);
+    final Conversation thread = state.openThread(
+      result.candidate,
+      score: result.score.total,
+      asRequest: asRequest,
+    );
+    Navigator.of(context).pushNamed(Routes.chat, arguments: thread);
   }
 
   @override
@@ -81,22 +49,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     final AppState state = AppStateScope.of(context);
     final bool wide = TMLayout.isWide(context);
 
-    // Re-scored against the profile as it stands now, so a detail screen opened
-    // before an availability change is not showing last week's arithmetic.
+    // Re-scored against the profile as it stands now, so a page opened before
+    // an availability change is not showing last week's arithmetic.
     final MatchResult result = rank(state.pool, state.profile).firstWhere(
-      (MatchResult r) => r.candidate.id == widget.result.candidate.id,
-      orElse: () => widget.result,
+      (MatchResult r) => r.candidate.id == this.result.candidate.id,
+      orElse: () => this.result,
     );
     final Candidate c = result.candidate;
     final String? when = describeOverlap(result.score.overlap);
-    // The viewer's own side of the conversation: a student checks their outbox,
-    // a tutor the requests they have received.
-    final List<MatchRequest> inbox = state.role == Role.student
-        ? sampleRequests
-        : sampleReceivedRequests;
-    final bool alreadyAsked = _sent ||
-        inbox.any((MatchRequest r) =>
-            r.counterpartId == c.id && r.status != RequestStatus.declined);
+    final Conversation? thread = state.conversationWith(c.id);
+    final bool student = state.role == Role.student;
 
     final Widget person = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,7 +114,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           constraints: const BoxConstraints(maxWidth: 560),
           child: Text(
             when == null
-                ? 'Your weeks do not cross at all. Requesting a lesson is still '
+                ? 'Your weeks do not cross at all. Sending a request is still '
                     'possible, but expect to move something on your side first.'
                 : '${result.score.overlapSlots} blocks a week line up — $when. '
                     'That is what the 25-point time score is measuring, block by block.',
@@ -164,35 +126,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
     final Widget aside = _ActionPanel(
       result: result,
-      sent: _sent,
-      alreadyAsked: alreadyAsked,
-      student: state.role == Role.student,
-      reference: _reference,
-      note: _note,
-      noteError: _noteError,
-      onChanged: () => setState(() => _noteError = null),
-      onSend: _send,
-      fromProfile: state.profileAnswered,
+      thread: thread,
+      student: student,
       profileSummary: state.profileSummary,
+      onSendRequest: () => _openChat(context, result, asRequest: true),
+      onMessage: () => _openChat(context, result, asRequest: false),
     );
 
     return TMPage(
-      navItems: <TMNavItem>[
-        TMNavItem(
-          label: 'Matches',
-          onTap: () => Navigator.of(context).pop(),
-        ),
-        TMNavItem(
-          label: 'Requests',
-          onTap: () => Navigator.of(context).pushNamed(Routes.requests),
-        ),
-        TMNavItem(
-          label: 'Profile',
-          onTap: () => Navigator.of(context).pushNamed(Routes.profile),
-        ),
-      ],
       navTrailing: TMButton(
-        label: 'Back to the list',
+        label: 'Back to the results',
         variant: TMButtonVariant.quiet,
         icon: TMIconName.arrowLeft,
         iconLeading: true,
@@ -364,32 +307,26 @@ class _Reason extends StatelessWidget {
 class _ActionPanel extends StatelessWidget {
   const _ActionPanel({
     required this.result,
-    required this.sent,
-    required this.alreadyAsked,
+    required this.thread,
     required this.student,
-    required this.reference,
-    required this.note,
-    required this.noteError,
-    required this.onChanged,
-    required this.onSend,
-    required this.fromProfile,
     required this.profileSummary,
+    required this.onSendRequest,
+    required this.onMessage,
   });
 
   final MatchResult result;
-  final bool sent;
-  final bool alreadyAsked;
+  final Conversation? thread;
   final bool student;
-  final String reference;
-  final TextEditingController note;
-  final String? noteError;
-  final VoidCallback onChanged;
-  final VoidCallback onSend;
-  final bool fromProfile;
   final String profileSummary;
+  final VoidCallback onSendRequest;
+  final VoidCallback onMessage;
 
   @override
   Widget build(BuildContext context) {
+    final String first = result.candidate.name.split(' ').first;
+    // A local copy, because promotion does not reach into a widget's fields.
+    final Conversation? open = thread;
+
     return TMEntry(
       floating: true,
       padding: const EdgeInsets.all(Space.xl),
@@ -401,90 +338,93 @@ class _ActionPanel extends StatelessWidget {
             trailing: TMStatusPill(tone: result.tier.tone, label: result.tier.label, dense: true),
           ),
           const SizedBox(height: Space.sm),
-          Text(
-            result.tier.meaning,
-            style: AppType.bodySmall.quieter,
+          Text(result.tier.meaning, style: AppType.bodySmall.quieter),
+          const SizedBox(height: Space.lg),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.only(top: 1, right: Space.sm),
+                child: TMIcon(TMIconName.sliders, size: 13, color: AppColors.accent),
+              ),
+              Expanded(
+                child: Text(
+                  'Based on your profile: $profileSummary',
+                  style: AppType.bodySmall.tone(AppColors.inkSecondary),
+                ),
+              ),
+            ],
           ),
-          if (fromProfile) ...<Widget>[
-            const SizedBox(height: Space.lg),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Padding(
-                  padding: EdgeInsets.only(top: 1, right: Space.sm),
-                  child: TMIcon(TMIconName.sliders, size: 13, color: AppColors.accent),
-                ),
-                Expanded(
-                  child: Text(
-                    'Based on your profile: $profileSummary',
-                    style: AppType.bodySmall.tone(AppColors.inkSecondary),
-                  ),
-                ),
-              ],
-            ),
-          ],
           const SizedBox(height: Space.xl),
           const Divider(height: 1),
           const SizedBox(height: Space.xl),
-          if (sent)
-            _SentConfirmation(
-              name: result.candidate.name,
-              reference: reference,
+          if (open == null)
+            _ContactForm(
               student: student,
-              onOpenRequests: () =>
-                  Navigator.of(context).pushNamed(Routes.requests),
-            )
-          else if (alreadyAsked)
-            TMInlineNote(
-              tone: StatusTone.pending,
-              title: student
-                  ? 'You have already asked ${result.candidate.name}.'
-                  : '${result.candidate.name} has already asked you.',
-              body: student
-                  ? 'Their answer appears under Requests as soon as it comes in. '
-                      'Sending a second request does not move you up the queue.'
-                  : 'Their request is waiting under Requests, with the hours they '
-                      'suggested. Read it there before you decide anything.',
-              actions: <Widget>[
-                TMButton(
-                  label: student ? 'Open your requests' : 'Read their request',
-                  variant: TMButtonVariant.secondary,
-                  minHeight: Hit.min,
-                  onPressed: () => Navigator.of(context).pushNamed(Routes.requests),
-                ),
-              ],
+              first: first,
+              onSendRequest: onSendRequest,
+              onMessage: onMessage,
             )
           else
-            _RequestForm(
-              note: note,
-              noteError: noteError,
-              onChanged: onChanged,
-              onSend: onSend,
-              name: result.candidate.name,
-              student: student,
+            TMInlineNote(
+              tone: open.stage.tone,
+              title: _threadTitle(open, student, first),
+              body: _threadBody(open, student, first),
+              actions: <Widget>[
+                TMButton(
+                  label: 'Open the conversation',
+                  variant: TMButtonVariant.secondary,
+                  icon: TMIconName.arrowRight,
+                  minHeight: Hit.min,
+                  onPressed: onMessage,
+                ),
+              ],
             ),
         ],
       ),
     );
   }
+
+  static String _threadTitle(Conversation thread, bool student, String first) =>
+      switch (thread.stage) {
+        ChatStage.requestSent =>
+          student ? 'You have asked $first for lessons.' : 'You have offered $first a lesson.',
+        ChatStage.accepted => 'You and $first have an open conversation.',
+        ChatStage.booked => 'Booked: ${thread.bookingCopy}.',
+        ChatStage.completed => 'Your last session with $first is done.',
+        ChatStage.declined => '$first turned the request down.',
+      };
+
+  static String _threadBody(Conversation thread, bool student, String first) =>
+      switch (thread.stage) {
+        ChatStage.requestSent =>
+          'The whole transaction lives in the chat from here: the answer, the booking and the confirmation all arrive in that thread.',
+        ChatStage.accepted => student
+            ? '$first said yes. Pick a day, a time and a rate in the chat.'
+            : 'Waiting for $first to pick a day and a time — it all happens in the chat.',
+        ChatStage.booked => thread.confirmed
+            ? 'Confirmed. Anything else about this lesson goes in the chat.'
+            : student
+                ? 'Waiting for $first to confirm the slot. That happens in the chat.'
+                : 'Confirm the slot in the chat when you are ready.',
+        ChatStage.completed => 'The thread stays so both sides can read how it went.',
+        ChatStage.declined =>
+          'Their answer is in the chat — read it there before asking somebody else.',
+      };
 }
 
-class _RequestForm extends StatelessWidget {
-  const _RequestForm({
-    required this.note,
-    required this.noteError,
-    required this.onChanged,
-    required this.onSend,
-    required this.name,
+class _ContactForm extends StatelessWidget {
+  const _ContactForm({
     required this.student,
+    required this.first,
+    required this.onSendRequest,
+    required this.onMessage,
   });
 
-  final TextEditingController note;
-  final String? noteError;
-  final VoidCallback onChanged;
-  final VoidCallback onSend;
-  final String name;
   final bool student;
+  final String first;
+  final VoidCallback onSendRequest;
+  final VoidCallback onMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -495,127 +435,33 @@ class _RequestForm extends StatelessWidget {
         const SizedBox(height: Space.md),
         Text(
           student
-              ? 'Say which of the shared hours you want and what the first lesson '
-                  'should cover. Requests with a day and a goal in them get '
-                  'answered; requests that say "hi" do not.'
-              : 'Say which of the shared hours you can give and what the first '
-                  'lesson would cover. Offers with a day and a plan in them get '
-                  'answered; offers that say "hi" do not.',
+              ? 'Send a request and the conversation opens with it. Everything '
+                  'after that — $first\'s answer, the booking, the confirmation — '
+                  'happens in one thread, so there is one place to look.'
+              : 'Send a request for a lesson and the conversation opens with it. '
+                  'The answer, the booking and the confirmation all happen in one '
+                  'thread, so there is one place to look.',
           style: AppType.bodySmall.quieter,
-        ),
-        const SizedBox(height: Space.lg),
-        _NoteField(
-          controller: note,
-          error: noteError,
-          onChanged: onChanged,
-          name: name,
-          student: student,
         ),
         const SizedBox(height: Space.lg),
         TMButton(
-          label: student ? 'Send the request' : 'Send the offer',
+          label: 'Send request',
           expand: true,
           icon: TMIconName.arrowRight,
-          onPressed: onSend,
+          onPressed: onSendRequest,
+        ),
+        const SizedBox(height: Space.md),
+        TMButton(
+          label: 'Message',
+          variant: TMButtonVariant.secondary,
+          expand: true,
+          onPressed: onMessage,
         ),
         const SizedBox(height: Space.md),
         Text(
-          'Nothing is emailed in this prototype — sending only changes this panel.',
+          'Nothing is emailed in this prototype — both buttons open a thread in '
+          'Messages and stop there.',
           style: AppType.bodySmall.quieter,
-        ),
-      ],
-    );
-  }
-}
-
-class _NoteField extends StatelessWidget {
-  const _NoteField({
-    required this.controller,
-    required this.error,
-    required this.onChanged,
-    required this.name,
-    required this.student,
-  });
-
-  final TextEditingController controller;
-  final String? error;
-  final VoidCallback onChanged;
-  final String name;
-  final bool student;
-
-  @override
-  Widget build(BuildContext context) {
-    final String first = name.split(' ').first;
-    return TMTextField(
-      label: 'Your note',
-      controller: controller,
-      hint: student
-          ? 'Hi $first — could we start Thursday evening? I have a mock in '
-              'eleven weeks and the mechanics questions are where I lose marks.'
-          : 'Hi $first — I can do Tuesday or Thursday after six. Bring the paper '
-              'you mentioned and we will start with the questions that went wrong.',
-      maxLines: 4,
-      error: error,
-      helper: error == null
-          ? 'Between 12 and about 400 characters is the range that gets replies.'
-          : null,
-      // Typing retires the error: the message goes back to being a hint about
-      // length, and the field's rule goes back to ink.
-      onChanged: (_) => onChanged(),
-    );
-  }
-}
-
-class _SentConfirmation extends StatelessWidget {
-  const _SentConfirmation({
-    required this.name,
-    required this.reference,
-    required this.student,
-    required this.onOpenRequests,
-  });
-
-  final String name;
-  final String reference;
-  final bool student;
-  final VoidCallback onOpenRequests;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        TMInlineNote(
-          tone: StatusTone.accepted,
-          title: 'Sent to $name.',
-          body: student
-              ? 'Reference $reference. They will accept or decline, and either '
-                  'answer appears under Requests — you do not have to check back '
-                  'here. Nothing was emailed: this is a prototype and the request '
-                  'only exists in this tab.'
-              : 'Reference $reference. They will accept or suggest another time. '
-                  'Nothing was emailed: this is a prototype, and the offer only '
-                  'exists in this panel.',
-        ),
-        const SizedBox(height: Space.lg),
-        Wrap(
-          spacing: Space.md,
-          runSpacing: Space.sm,
-          children: <Widget>[
-            if (student)
-              TMButton(
-                label: 'Open your requests',
-                variant: TMButtonVariant.secondary,
-                icon: TMIconName.arrowRight,
-                minHeight: Hit.min,
-                onPressed: onOpenRequests,
-              ),
-            TMButton(
-              label: 'Keep reading the list',
-              variant: student ? TMButtonVariant.quiet : TMButtonVariant.secondary,
-              minHeight: Hit.min,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
         ),
       ],
     );

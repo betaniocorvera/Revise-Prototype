@@ -151,8 +151,8 @@ class _Opening extends StatelessWidget {
         _RoleEntry(
           primary: true,
           title: 'I need a tutor',
-          body: 'Answer five questions, get a ranked list of tutors with a score, '
-              'three reasons each, and the hours you both have free.',
+          body: 'Search the pool and get tutors ranked best fit first — with the '
+              'score, three reasons each, and the hours you both have free.',
           actionLabel: 'Start as a student',
           onTap: () => onStart(Role.student),
         ),
@@ -160,8 +160,8 @@ class _Opening extends StatelessWidget {
         _RoleEntry(
           primary: false,
           title: 'I teach',
-          body: 'Same five questions, asked the other way round. You will see '
-              'students ranked by how well they fit how you actually work.',
+          body: 'Search the pool and get students ranked by how well they fit how '
+              'you actually work — their hours, their budget, their style.',
           actionLabel: 'Start as a tutor',
           onTap: () => onStart(Role.tutor),
         ),
@@ -435,14 +435,15 @@ class _Closing extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Five questions, then a ranked list',
+                      'Five answers, then you search',
                       style: AppType.sectionTitle.tone(AppColors.onAccent),
                     ),
                     const SizedBox(height: Space.md),
                     Text(
                       'Subjects, style, the hours you actually have, online or in '
-                      'person, and what you can spend. Two minutes, and nothing '
-                      'is saved until you decide it should be.',
+                      'person, and what you can spend — answered on your profile, '
+                      'where each one says what it is for. Nothing is saved at any '
+                      'point; reloading brings the demo back.',
                       style: AppType.bodySmall.tone(AppColors.onInkQuiet),
                     ),
                     const SizedBox(height: Space.xl),
@@ -451,7 +452,7 @@ class _Closing extends StatelessWidget {
                       runSpacing: Space.sm,
                       children: <Widget>[
                         TMButton(
-                          label: 'Answer the five questions',
+                          label: 'Create an account',
                           variant: TMButtonVariant.primary,
                           icon: TMIconName.arrowRight,
                           onPressed: () => Navigator.of(context).pushNamed(

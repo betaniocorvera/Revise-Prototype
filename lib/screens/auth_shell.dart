@@ -180,8 +180,8 @@ class AuthRoleSwitch extends StatelessWidget {
         children: <Widget>[
           const TMFieldLabel(
             label: 'I am signing up as',
-            reason: 'This decides whose list you see next. It does not change '
-                'what we ask you, only who gets ranked.',
+            reason: 'This decides whose pool you search: tutors, or students. '
+                'Everything else is the same on both sides.',
           ),
           const SizedBox(height: Space.md),
           TMSegmented<Role>(

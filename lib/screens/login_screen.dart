@@ -55,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
     AppStateScope.read(context).role = _role;
     Future<void>.delayed(const Duration(milliseconds: 520), () {
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(Routes.matches);
+      Navigator.of(context).pushReplacementNamed(Routes.dashboard);
     });
   }
 
@@ -63,8 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final AppState state = AppStateScope.read(context);
     state.role = _role;
     state.profile = _role == Role.student ? demoStudentProfile : demoTutorProfile;
-    state.profileAnswered = true;
-    Navigator.of(context).pushReplacementNamed(Routes.matches);
+    Navigator.of(context).pushReplacementNamed(Routes.dashboard);
   }
 
   @override
@@ -73,12 +72,13 @@ class _LoginScreenState extends State<LoginScreen> {
       role: _role,
       onRoleChanged: (Role r) => setState(() => _role = r),
       title: 'Sign in',
-      lede: 'Pick up your list where you left it. In this prototype there is '
-          'nothing to pick up yet — any valid-looking email and a password of '
-          'eight characters will let you through.',
+      lede: 'In you go — straight to the dashboard, because there is no queue '
+          'to wait in here. Any valid-looking email and a password of eight '
+          'characters will let you through.',
       nextSteps: const <String>[
-        'Your ranked list and your filters, as you left them.',
-        'Any requests you have sent, with their answers.',
+        'Search, messages and your profile, behind one dashboard.',
+        'Every request and every lesson in a thread, with the stage written '
+            'across the top.',
         'Nothing is stored. Signing out is the same as reloading.',
       ],
       switchPrompt: 'No account yet?',
@@ -129,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
               label: 'Sign in',
               expand: true,
               busy: _busy,
-              busyLabel: 'Finding your list…',
+              busyLabel: 'Opening your dashboard…',
               icon: TMIconName.arrowRight,
               onPressed: _submit,
             ),

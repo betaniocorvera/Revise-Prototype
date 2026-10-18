@@ -1,26 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // The profile.
 //
-// This is not a settings page and it is not a resume. It is the list of answers
-// the ranking actually reads, laid out in the order they weigh, each one
-// editable where it is stated. A person who wonders "why am I seeing this
-// tutor?" should be able to answer it from this screen without reading any help
-// text — the five blocks below are the whole of the recommender's input.
+// Two modes and one toggle. Read mode states the answers the ranking reads, in
+// the order they weigh. Edit mode is a form with the same blocks, in the same
+// order, each one editable where it is stated — a person who wonders "why am I
+// seeing this tutor?" should be able to answer it from this screen without
+// reading any help text, because these blocks are the whole of the
+// recommender's input.
 //
-// The sixth block, the goal, is deliberately outside the numbered list and
-// labelled as not compared, because lying about what the algorithm uses is the
-// one thing a matching product cannot afford to do.
+// Two decisions worth defending:
+//
+//   * Editing is a mode, not a page of always-open inputs. A profile is read
+//     ten times for every time it is changed, and signed-out text beats live
+//     carets for the reading.
+//   * Save confirms in place and says what it did, including the part this
+//     prototype cannot do: nothing left the browser. The alternative — a modal
+//     or a silent return — would claim more than happened.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
 import 'package:tutormatch/data/mock_data.dart';
-import 'package:tutormatch/main.dart';
 import 'package:tutormatch/state/app_state.dart';
 import 'package:tutormatch/theme/app_theme.dart';
 import 'package:tutormatch/widgets/availability_grid.dart';
+import 'package:tutormatch/widgets/tm_avatar.dart';
 import 'package:tutormatch/widgets/tm_button.dart';
 import 'package:tutormatch/widgets/tm_field.dart';
-import 'package:tutormatch/widgets/tm_icon.dart';
 import 'package:tutormatch/widgets/tm_layout.dart';
 import 'package:tutormatch/widgets/tm_status.dart';
 
@@ -32,536 +37,672 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late final TextEditingController _name;
+  bool _editing = false;
+  bool _preview = false;
+  bool _saved = false;
+  String? _nameError;
+  Profile? _draft;
 
-  @override
-  void initState() {
-    super.initState();
-    _name = TextEditingController(text: AppStateScope.read(context).profile.name);
-  }
+  final TextEditingController _name = TextEditingController();
+  final TextEditingController _bio = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
+    _bio.dispose();
     super.dispose();
+  }
+
+  void _startEdit(AppState state) {
+    setState(() {
+      _editing = true;
+      _preview = false;
+      _saved = false;
+      _nameError = null;
+      _draft = state.profile;
+      _name.text = state.profile.name;
+      _bio.text = state.profile.bio;
+    });
+  }
+
+  void _cancel() {
+    setState(() {
+      _editing = false;
+      _draft = null;
+      _nameError = null;
+    });
+  }
+
+  void _save(AppState state) {
+    final String name = _name.text.trim();
+    if (name.isEmpty) {
+      setState(() => _nameError =
+          'A name is needed — it is what the other side sees on the request.');
+      return;
+    }
+    state.profile = (_draft ?? state.profile).copyWith(
+      name: name,
+      bio: _bio.text.trim(),
+    );
+    setState(() {
+      _editing = false;
+      _draft = null;
+      _nameError = null;
+      _saved = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final AppState state = AppStateScope.of(context);
-    final Profile p = state.profile;
-    final bool wide = TMLayout.isWide(context);
-
-    return TMPage(
-      navItems: <TMNavItem>[
-        TMNavItem(
-          label: 'Matches',
-          onTap: () => Navigator.of(context).pushNamed(Routes.matches),
-        ),
-        TMNavItem(
-          label: 'Requests',
-          onTap: () => Navigator.of(context).pushNamed(Routes.requests),
-        ),
-        TMNavItem(label: 'Profile', selected: true),
-      ],
-      navTrailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 200),
-              child: Text(
-                '${p.name} · ${p.role == Role.student ? 'Student' : 'Tutor'}',
-                style: AppType.bodySmall.quieter,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          const SizedBox(width: Space.sm),
-          TMButton(
-            label: 'Sign out',
-            variant: TMButtonVariant.quiet,
-            minHeight: Hit.min,
-            onPressed: () =>
-                Navigator.of(context).popUntil((Route<void> r) => r.isFirst),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const SizedBox(height: Space.xxl),
-          Text('Your profile', style: AppType.pageTitle),
-          const SizedBox(height: Space.lg),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: Text(
-              'Five answers decide who appears in your list: subjects, the hours '
-              'you keep free, how you like to work, whether you meet online or in '
-              'person, and what you can pay. They are below in the order they '
-              'count. Change one and the ranking changes with it — nothing is '
-              'sent anywhere until you ask for a lesson.',
-              style: AppType.bodyLarge.quiet,
-            ),
-          ),
-          const SizedBox(height: Space.xxl),
-          if (wide)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(child: _answers(context, state)),
-                const SizedBox(width: Space.xxl),
-                SizedBox(
-                  width: TMLayout.asideWidth,
-                  child: _aside(context, state),
-                ),
-              ],
-            )
-          else ...<Widget>[
-            _answers(context, state),
-            SizedBox(height: Space.band(TMLayout.widthOf(context))),
-            _aside(context, state),
-          ],
-          const SizedBox(height: Space.huge),
-        ],
-      ),
-    );
-  }
-
-  // ── The five answers, in weight order ──────────────────────────────────────
-
-  Widget _answers(BuildContext context, AppState state) {
-    final Profile p = state.profile;
+    final Profile p = _editing ? _draft! : state.profile;
     final bool student = p.role == Role.student;
-    final List<String> styles =
-        student ? OnboardingOptions.studentStyles : OnboardingOptions.tutorStyles;
-    final List<String> goals =
-        student ? OnboardingOptions.studentGoals : OnboardingOptions.tutorGoals;
+    final String counterpart = student ? 'tutor' : 'student';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const TMMicroLabelText('What the ranking uses'),
-        const SizedBox(height: Space.md),
-        const SizedBox(height: 1, child: ColoredBox(color: AppColors.rule)),
+        const SizedBox(height: Space.xxl),
+        Text('Your profile', style: AppType.pageTitle),
+        const SizedBox(height: Space.lg),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620),
+          child: Text(
+            'These are the answers the ranking reads, in the order they count. '
+            'Edit any of them — the order of your results changes as soon as you '
+            'save, and nothing you do here leaves the browser.',
+            style: AppType.bodyLarge.quiet,
+          ),
+        ),
+        const SizedBox(height: Space.xl),
+
+        if (!_editing)
+          _Completeness(
+            percent: state.profileCompleteness,
+            missing: state.profileMissing,
+          ),
 
         const SizedBox(height: Space.xl),
-        _Answer(
-          number: 1,
-          title: MatchDimension.subjects.label,
-          note: '${MatchDimension.subjects.max} of 100 points. '
-              '${MatchDimension.subjects.explainer}',
+
+        if (_editing)
+          _form(state)
+        else ...<Widget>[
+          _controls(state, counterpart),
+          if (_saved) ...<Widget>[
+            const SizedBox(height: Space.xl),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: const TMInlineNote(
+                tone: StatusTone.accepted,
+                title: 'Saved.',
+                body: 'The ranking has the new answers already — your next search '
+                    'is ranked on them. In this prototype nothing was written to a '
+                    'server, so reloading the page brings the demo profile back.',
+              ),
+            ),
+          ],
+          const SizedBox(height: Space.xxl),
+          if (_preview)
+            _previewCard(p, counterpart)
+          else
+            _view(p, student),
+        ],
+
+        const SizedBox(height: Space.huge),
+      ],
+    );
+  }
+
+  // ── Read mode ──────────────────────────────────────────────────────────────
+
+  Widget _view(Profile p, bool student) {
+    final String? when = describeOverlap(p.availability);
+    final int free = p.availability.where((bool c) => c).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            TMAvatar(name: p.name, size: 56),
+            const SizedBox(width: Space.lg),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(p.name, style: AppType.titleLarge),
+                  const SizedBox(height: Space.xs),
+                  Text(
+                    '${student ? 'Student' : 'Tutor'} · '
+                    '${student ? 'looking for a tutor' : 'offering tutoring'}',
+                    style: AppType.bodySmall.quieter,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: Space.xl),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Text(
+            p.bio.trim().isEmpty
+                ? 'No bio yet — the one answer a stranger reads first. It is '
+                    'also what the completeness figure above is missing.'
+                : '“${p.bio}”',
+            style: p.bio.trim().isEmpty ? AppType.body.quiet : AppType.quote,
+          ),
+        ),
+        const SizedBox(height: Space.xxl),
+
+        _Block(
+          label: 'Subjects',
+          note: '${MatchDimension.subjects.max} of the 100 points. A shared '
+              'subject is what makes a person appear in your results at all.',
+          child: _Body(p.subjects.isEmpty ? 'None chosen yet.' : p.subjects.join(' · ')),
+        ),
+        _Block(
+          label: student ? 'What you can spend' : 'Your rate',
+          note: student
+              ? '${MatchDimension.budget.max} points. Tutors above this are '
+                  'filtered out of your results.'
+              : '${MatchDimension.budget.max} points. Students whose ceiling is '
+                  'below this are filtered out of theirs.',
+          child: _Body(p.budget >= 80
+              ? 'No ceiling — any price.'
+              : '\$${p.budget}/hr'),
+        ),
+        _Block(
+          label: 'Online or in person',
+          note: '${MatchDimension.format.max} points. "Both" is a real answer, '
+              'not a cop-out — it widens what matches.',
+          child: _Body(p.mode.label),
+        ),
+        _Block(
+          label: 'Weekly availability',
+          note: '${MatchDimension.time.max} of the 100 points, and the dimension '
+              'that decides most close calls. The filled cells are the hours you '
+              'keep free.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _Body(when == null
+                  ? 'No hours set. Every result will read as a time mismatch '
+                      'until this is filled in.'
+                  : 'Free on $when. '
+                      '$free of 21 half-day blocks are yours.'),
+              const SizedBox(height: Space.lg),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: AvailabilityGrid(
+                  overlap: p.availability,
+                  cellHeight: 20,
+                  semanticLabel:
+                      '$free of 21 half-day blocks are free on your profile',
+                ),
+              ),
+            ],
+          ),
+        ),
+        _Block(
+          label: 'What you are aiming at',
+          note: 'Not scored. This is the one answer that is for you, not for the '
+              'ranking.',
+          child: _Body(p.goal),
+        ),
+        _Block(
+          label: 'How you like to work',
+          note: '${MatchDimension.style.max} points: how you like to work, not '
+              'what you know.',
+          child: _Body(p.style),
+        ),
+      ],
+    );
+  }
+
+  // ── Controls: edit, and the preview switch ─────────────────────────────────
+
+  Widget _controls(AppState state, String counterpart) {
+    return Wrap(
+      spacing: Space.xxl,
+      runSpacing: Space.lg,
+      crossAxisAlignment: WrapCrossAlignment.start,
+      children: <Widget>[
+        TMButton(
+          label: 'Edit profile',
+          minHeight: Hit.min,
+          onPressed: () => _startEdit(state),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const TMMicroLabelText('Preview how others see you'),
+            const SizedBox(height: Space.sm),
+            SizedBox(
+              width: 168,
+              child: TMSegmented<bool>(
+                options: const <bool>[false, true],
+                selected: _preview,
+                onSelect: (bool v) => setState(() => _preview = v),
+                labelOf: (bool v) => v ? 'On' : 'Off',
+              ),
+            ),
+            const SizedBox(height: Space.sm),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Text(
+                _preview
+                    ? 'Showing the profile exactly as a $counterpart reads it '
+                        'before answering. Switch it off to get the editing '
+                        'controls back.'
+                    : 'Check the wording the way it will be read before a '
+                        '$counterpart answers you.',
+                style: AppType.bodySmall.quieter,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ── Edit mode ──────────────────────────────────────────────────────────────
+
+  Widget _form(AppState state) {
+    final Profile d = _draft!;
+    final bool student = d.role == Role.student;
+    final List<String> styles =
+        student ? ProfileOptions.studentStyles : ProfileOptions.tutorStyles;
+    final List<String> goals =
+        student ? ProfileOptions.studentGoals : ProfileOptions.tutorGoals;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            TMAvatar(name: d.name.isEmpty ? '?' : d.name, size: 56),
+            const SizedBox(width: Space.lg),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Editing.', style: AppType.titleLarge),
+                  const SizedBox(height: Space.xs),
+                  Text(
+                    'Nothing is written down until you press Save — and even then '
+                    'it only lives until the page is reloaded.',
+                    style: AppType.bodySmall.quieter,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: Space.xxl),
+
+        TMTextField(
+          label: 'Name',
+          controller: _name,
+          reason: 'It goes on every request you send.',
+          error: _nameError,
+          textInputAction: TextInputAction.done,
+          onChanged: (_) {
+            if (_nameError != null) setState(() => _nameError = null);
+          },
+        ),
+        const SizedBox(height: Space.xxl),
+
+        TMTextField(
+          label: 'A short bio',
+          controller: _bio,
+          maxLines: 4,
+          hint: student
+              ? 'Yr 12, working towards a mock in eleven weeks. I would rather '
+                  'understand the hard questions than memorise the easy ones.'
+              : 'Nine years teaching calculus and statistics, ex-exam marker. One '
+                  'worked example, then you do the next one while I watch where '
+                  'it goes wrong.',
+          helper: 'Two sentences in your own voice beat a list of adjectives. '
+              'This is what someone reads before answering your request — and '
+              'the answer the completeness figure is usually missing.',
+        ),
+        const SizedBox(height: Space.xxl),
+
+        _Block(
+          label: 'Subjects',
+          note: 'Everything you would happily teach or learn. '
+              '${MatchDimension.subjects.max} of the 100 points, and the one '
+              'thing both sides must share before a match exists at all.',
           child: TMTagPicker(
-            options: OnboardingOptions.subjects,
-            selected: p.subjects.toSet(),
-            max: 4,
-            maxReachedNote: 'Four is the limit here. A shorter list ranks you '
-                'better than a long one: the recommender reads every subject you '
-                'add as something you actually want to be taught.',
+            options: ProfileOptions.subjects,
+            selected: d.subjects.toSet(),
             onToggle: (String s) {
-              final Set<String> next = <String>{...p.subjects};
+              final Set<String> next = d.subjects.toSet();
               if (!next.remove(s)) next.add(s);
-              state.profile = p.copyWith(subjects: next.toList());
+              setState(() => _draft = d.copyWith(subjects: next.toList()));
             },
           ),
         ),
 
-        const SizedBox(height: Space.xxl),
-        _Answer(
-          number: 2,
-          title: MatchDimension.time.label,
-          note: '${MatchDimension.time.max} of 100 points, worked out cell by '
-              'cell against the other person\'s week — so this is the answer '
-              'that moves the list most when you change it.',
+        _Block(
+          label: 'Weekly availability',
+          note: 'Tap the blocks you are free. ${MatchDimension.time.max} of the '
+              '100 points, and the dimension people most often forget — an '
+              'empty week matches nobody.',
           child: AvailabilityEditor(
-            value: p.availability,
-            onChanged: (List<bool> next) =>
-                state.profile = p.copyWith(availability: next),
+            value: d.availability,
+            onChanged: (List<bool> v) =>
+                setState(() => _draft = d.copyWith(availability: v)),
           ),
         ),
 
-        const SizedBox(height: Space.xxl),
-        _Answer(
-          number: 3,
-          title: MatchDimension.style.label,
-          note: '${MatchDimension.style.max} of 100 points. '
-              '${MatchDimension.style.explainer}',
-          child: _Disclosure(
-            summary: p.style,
-            openLabel: 'Pick a different answer',
-            closeLabel: 'Keep it as it is',
-            child: TMChoiceList<String>(
-              options: styles,
-              selected: p.style,
-              onSelect: (String s) => state.profile = p.copyWith(style: s),
-              labelOf: (String s) => s,
-            ),
-          ),
-        ),
-
-        const SizedBox(height: Space.xxl),
-        _Answer(
-          number: 4,
-          title: MatchDimension.format.label,
-          note: '${MatchDimension.format.max} of 100 points. '
-              '${MatchDimension.format.explainer}',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              TMSegmented<SessionMode>(
-                options: const <SessionMode>[
-                  SessionMode.online,
-                  SessionMode.inPerson,
-                  SessionMode.both,
-                ],
-                selected: p.mode,
-                onSelect: (SessionMode m) => state.profile = p.copyWith(mode: m),
-                labelOf: (SessionMode m) => m.label,
-              ),
-              const SizedBox(height: Space.sm),
-              Text(
-                p.mode == SessionMode.both
-                    ? 'Both sides of the list are open to you. Every tutor who '
-                        'teaches online counts, and so does the one who only '
-                        'teaches in a room.'
-                    : 'People who teach ${p.mode.counterLabel} still rank, they '
-                        'just lose the ${MatchDimension.format.max} points this '
-                        'dimension is worth — which is why they sort lower '
-                        'instead of disappearing.',
-                style: AppType.bodySmall.quieter,
-              ),
+        _Block(
+          label: 'Online or in person',
+          note: '${MatchDimension.format.max} points. "Both" widens your pool '
+              'rather than narrowing anybody else\'s.',
+          child: TMSegmented<SessionMode>(
+            options: const <SessionMode>[
+              SessionMode.online,
+              SessionMode.inPerson,
+              SessionMode.both,
             ],
+            selected: d.mode,
+            onSelect: (SessionMode m) => setState(() => _draft = d.copyWith(mode: m)),
+            labelOf: (SessionMode m) => m.label,
+          ),
+        ),
+
+        _Block(
+          label: student ? 'What you can spend' : 'Your rate',
+          note: '${MatchDimension.budget.max} points, measured as one budget '
+              'against one price. "Any price" is a real answer.',
+          child: TMBudgetScale(
+            value: d.budget,
+            onChanged: (int v) => setState(() => _draft = d.copyWith(budget: v)),
+          ),
+        ),
+
+        _Block(
+          label: student ? 'What you are aiming at' : 'What you want out of it',
+          note: 'Not scored, and kept outside the numbered answers above. '
+              'It is the one thing here that is for you rather than for the '
+              'ranking.',
+          child: TMChoiceList<String>(
+            options: goals,
+            selected: d.goal,
+            onSelect: (String g) => setState(() => _draft = d.copyWith(goal: g)),
+            labelOf: (String g) => g,
+          ),
+        ),
+
+        _Block(
+          label: 'How you like to work',
+          note: '${MatchDimension.style.max} points: how you like to work, not '
+              'what you know.',
+          child: TMChoiceList<String>(
+            options: styles,
+            selected: d.style,
+            onSelect: (String s) => setState(() => _draft = d.copyWith(style: s)),
+            labelOf: (String s) => s,
           ),
         ),
 
         const SizedBox(height: Space.xxl),
-        _Answer(
-          number: 5,
-          title: MatchDimension.budget.label,
-          note: '${MatchDimension.budget.max} of 100 points. '
-              '${MatchDimension.budget.explainer}',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              TMBudgetScale(
-                value: p.budget,
-                onChanged: (int v) => state.profile = p.copyWith(budget: v),
-              ),
-              const SizedBox(height: Space.sm),
-              Text(
-                student
-                    ? 'A ceiling, not a target. ${p.budget >= 80 ? 'Set to any price, so cost stops counting.' : 'Anyone above \$${p.budget} an hour still appears — the reason line says by how much.'}'
-                    : 'Your going rate. Students whose ceiling is below it still '
-                        'appear, with the gap stated as one of their reasons.',
-                style: AppType.bodySmall.quieter,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: Space.xxl),
-        _Answer(
-          number: null,
-          title: 'What you want out of it',
-          note: 'Not one of the five. Nothing above changes because of this — it '
-              'is here so that whoever reads your request knows what you are '
-              'aiming at before they answer it.',
-          child: _Disclosure(
-            summary: p.goal,
-            openLabel: 'Pick a different answer',
-            closeLabel: 'Keep it as it is',
-            child: TMChoiceList<String>(
-              options: goals,
-              selected: p.goal,
-              onSelect: (String g) => state.profile = p.copyWith(goal: g),
-              labelOf: (String g) => g,
+        Wrap(
+          spacing: Space.lg,
+          runSpacing: Space.sm,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            TMButton(
+              label: 'Save changes',
+              minHeight: Hit.min,
+              onPressed: () => _save(state),
             ),
+            TMTextLink(
+              label: 'Cancel',
+              style: AppType.bodySmall,
+              onTap: _cancel,
+            ),
+          ],
+        ),
+        const SizedBox(height: Space.md),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Text(
+            'Save keeps this for the session and the ranking picks it up '
+            'straight away. Reloading the page brings the demo profile back — '
+            'there is nowhere else for it to go.',
+            style: AppType.bodySmall.quieter,
           ),
         ),
       ],
     );
   }
 
-  // ── Account and the way back to the list ───────────────────────────────────
+  // ── The preview ────────────────────────────────────────────────────────────
 
-  Widget _aside(BuildContext context, AppState state) {
-    final Profile p = state.profile;
+  Widget _previewCard(Profile p, String counterpart) {
+    final int free = p.availability.where((bool c) => c).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const TMMicroLabelText('Your account'),
+        TMEntry(
+          floating: true,
+          padding: const EdgeInsets.all(Space.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  TMAvatar(name: p.name, size: 52),
+                  const SizedBox(width: Space.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(p.name, style: AppType.titleLarge),
+                        const SizedBox(height: Space.xs),
+                        Text(
+                          p.role == Role.student ? 'Student' : 'Tutor',
+                          style: AppType.bodySmall.quieter,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Space.lg),
+              Wrap(
+                spacing: Space.sm,
+                runSpacing: Space.sm,
+                children: <Widget>[
+                  for (final String s in p.subjects) _Chip(label: s),
+                  _Chip(label: p.mode.label),
+                  _Chip(
+                    label: p.budget >= 80
+                        ? 'Any price'
+                        : p.role == Role.student
+                            ? 'up to \$${p.budget}/hr'
+                            : '\$${p.budget}/hr',
+                  ),
+                ],
+              ),
+              const SizedBox(height: Space.xl),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Text(
+                  p.bio.trim().isEmpty
+                      ? 'No bio written yet. Most people will read this line '
+                          'before anything else you say.'
+                      : '“${p.bio}”',
+                  style: p.bio.trim().isEmpty
+                      ? AppType.body.quiet
+                      : AppType.quote,
+                ),
+              ),
+              const SizedBox(height: Space.xxl),
+              const TMRule(label: 'When they are free'),
+              const SizedBox(height: Space.lg),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: AvailabilityGrid(
+                  overlap: p.availability,
+                  cellHeight: 22,
+                  semanticLabel:
+                      '$free of 21 half-day blocks are free on this profile',
+                ),
+              ),
+              const SizedBox(height: Space.xxl),
+              const TMRule(label: 'What they say about their goal'),
+              const SizedBox(height: Space.lg),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Text('“${p.goal}”', style: AppType.quote),
+              ),
+              const SizedBox(height: Space.xl),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Text(p.style, style: AppType.body.quiet),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: Space.md),
-        const SizedBox(height: 1, child: ColoredBox(color: AppColors.rule)),
-        const SizedBox(height: Space.lg),
-        TMTextField(
-          label: 'Name',
-          controller: _name,
-          reason: 'Shown on the requests you send, and on the profile a tutor '
-              'opens. It is not compared against anybody.',
-          textInputAction: TextInputAction.done,
-          onChanged: (String v) {
-            // An empty name is never written: the person is mid-edit, and the
-            // rest of the product has already put their old name in a nav bar.
-            if (v.trim().isEmpty) return;
-            state.profile = p.copyWith(name: v);
-          },
-        ),
-        const SizedBox(height: Space.xl),
-        const TMMicroLabelText('I am here as'),
-        const SizedBox(height: Space.md),
-        TMSegmented<Role>(
-          options: const <Role>[Role.student, Role.tutor],
-          selected: p.role,
-          onSelect: (Role r) => _switchRole(state, r),
-          labelOf: (Role r) =>
-              r == Role.student ? 'Looking for a tutor' : 'Offering tutoring',
-        ),
-        const SizedBox(height: Space.sm),
         Text(
-          'Switching swaps whose list you see. Style and goal are worded per '
-          'side, so an answer that no longer exists on this side resets to the '
-          'first option.',
+          'How a $counterpart sees you: name, subjects, hours, format and '
+          'price, in the order they are read on the person page.',
           style: AppType.bodySmall.quieter,
-        ),
-        const SizedBox(height: Space.xxl),
-
-        TMButton(
-          label: 'Rank again with these answers',
-          icon: TMIconName.arrowRight,
-          expand: true,
-          onPressed: () => Navigator.of(context).pushNamed(Routes.matches),
-        ),
-        const SizedBox(height: Space.sm),
-        Text(
-          'The ranking uses your answers the moment you change them. This takes '
-          'you to the result — ${state.pool.length} '
-          '${p.role == Role.student ? 'tutors' : 'students'} in the pool.',
-          style: AppType.bodySmall.quieter,
-        ),
-        const SizedBox(height: Space.xxl),
-
-        const TMInlineNote(
-          tone: StatusTone.neutral,
-          title: 'None of this is saved',
-          body: 'TutorMatch is an interface prototype with no accounts behind '
-              'it. The answers above live in memory for as long as this tab is '
-              'open, and reloading puts you back to the sample profile. Nothing '
-              'is sent to a server, because there is no server.',
         ),
       ],
-    );
-  }
-
-  /// Flips which side of the marketplace you are standing on. The role decides
-  /// whose list you see, so it lives with the answers rather than in the
-  /// navigation — and the two questions that are worded per side are reset only
-  /// when their wording no longer exists.
-  void _switchRole(AppState state, Role role) {
-    if (role == state.profile.role) return;
-    final List<String> styles = role == Role.student
-        ? OnboardingOptions.studentStyles
-        : OnboardingOptions.tutorStyles;
-    final List<String> goals = role == Role.student
-        ? OnboardingOptions.studentGoals
-        : OnboardingOptions.tutorGoals;
-    final Profile p = state.profile;
-    state.role = role;
-    state.profile = p.copyWith(
-      role: role,
-      style: styles.contains(p.style) ? null : styles.first,
-      goal: goals.contains(p.goal) ? null : goals.first,
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// One numbered answer
+// Pieces
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _Answer extends StatelessWidget {
-  const _Answer({
-    required this.number,
-    required this.title,
-    required this.note,
-    required this.child,
-  });
+/// One answer, in the order the ranking weighs it. The rule above each block is
+/// the only structure used on this page.
+class _Block extends StatelessWidget {
+  const _Block({required this.label, required this.child, this.note = ''});
 
-  /// The position in the ranking's order of weight. Null for the answer that is
-  /// not compared, which is marked with a rule instead of a figure.
-  final int? number;
-  final String title;
+  final String label;
   final String note;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    // On a phone the number moves into the label rather than eating a gutter
-    // out of the week grid, where every pixel is a 44 px tap target.
-    final bool compact = TMLayout.isCompact(context);
-    final String label = number == null
-        ? title
-        : compact
-            ? '$number. $title'
-            : title;
-
-    final Widget body = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         const SizedBox(height: 1, child: ColoredBox(color: AppColors.rule)),
         const SizedBox(height: Space.lg),
-        TMMicroLabelText(
-          label,
-          color: number == null ? AppColors.inkMuted : AppColors.inkSecondary,
-        ),
+        TMMicroLabelText(label),
         const SizedBox(height: Space.lg),
         child,
-        const SizedBox(height: Space.md),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Text(note, style: AppType.bodySmall.quieter),
-        ),
-      ],
-    );
-
-    if (compact || number == null) return body;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        SizedBox(
-          width: 40,
-          child: Padding(
-            padding: const EdgeInsets.only(top: Space.lg - 2),
-            child: Text(
-              '$number',
-              style: AppType.figure.tone(AppColors.inkMuted),
-            ),
+        if (note.isNotEmpty) ...<Widget>[
+          const SizedBox(height: Space.md),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Text(note, style: AppType.bodySmall.quieter),
           ),
-        ),
-        Expanded(child: body),
+        ],
+        const SizedBox(height: Space.xl),
       ],
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// The disclosure
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The current answer, quoted, with the full choice list behind one link.
-///
-/// Style and goal are answered in whole sentences, and five sentences take a
-/// screenful. Keeping them closed means the recap of the five answers stays the
-/// dominant thing on this page — but the sentences are still the real control,
-/// one tap away, not a summary that hides what was actually chosen.
-class _Disclosure extends StatefulWidget {
-  const _Disclosure({
-    required this.summary,
-    required this.openLabel,
-    required this.closeLabel,
-    required this.child,
-  });
-
-  final String summary;
-  final String openLabel;
-  final String closeLabel;
-  final Widget child;
+class _Body extends StatelessWidget {
+  const _Body(this.text);
+  final String text;
 
   @override
-  State<_Disclosure> createState() => _DisclosureState();
+  Widget build(BuildContext context) =>
+      Text(text, style: AppType.bodyLarge);
 }
 
-class _DisclosureState extends State<_Disclosure> {
-  bool _open = false;
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: Space.xs + 1),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.ruleStrong),
+        borderRadius: BorderRadius.circular(Radii.sharp - 1),
+      ),
+      child: Text(label, style: AppType.bodySmall.tone(AppColors.inkSecondary)),
+    );
+  }
+}
+
+/// The completeness figure: a number, what is missing by name, and a rule that
+/// fills as the answers do. Deliberately quiet — it is an invitation, not a
+/// gate, and the dashboard banner already made the point once.
+class _Completeness extends StatelessWidget {
+  const _Completeness({required this.percent, required this.missing});
+
+  final int percent;
+  final List<String> missing;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Text('“${widget.summary}”', style: AppType.quote),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: <Widget>[
+            Text('$percent%', style: AppType.figureLarge),
+            const SizedBox(width: Space.sm),
+            Flexible(
+              child: Text(
+                missing.isEmpty
+                    ? 'complete — every answer the ranking reads is filled in.'
+                    : 'complete — missing ${_andList(missing)}.',
+                style: AppType.bodySmall.quieter,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: Space.sm),
-        _DisclosureLink(
-          label: _open ? widget.closeLabel : widget.openLabel,
-          open: _open,
-          onTap: () => setState(() => _open = !_open),
-        ),
-        AnimatedSize(
-          duration: Motion.base,
-          curve: Motion.ease,
-          alignment: Alignment.topCenter,
-          child: _open
-              ? Padding(
-                  padding: const EdgeInsets.only(top: Space.lg),
-                  child: widget.child,
-                )
-              : const SizedBox(width: double.infinity),
-        ),
+        if (missing.isNotEmpty) ...<Widget>[
+          const SizedBox(height: Space.md),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: SizedBox(
+              height: 3,
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    flex: percent,
+                    child: const ColoredBox(color: AppColors.accent),
+                  ),
+                  Expanded(
+                    flex: 100 - percent,
+                    child: const ColoredBox(color: AppColors.rule),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
 }
 
-/// Local rather than shared: this is the only link in the product whose mark
-/// turns, because it is the only one where the mark's angle *is* the state.
-class _DisclosureLink extends StatelessWidget {
-  const _DisclosureLink({
-    required this.label,
-    required this.open,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool open;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TMFocusable(
-      onTap: onTap,
-      semanticButton: false,
-      semanticLabel: label,
-      builder: (BuildContext context, TMState s) {
-        final Color ink = s.hovered || s.focused ? AppColors.accent : AppColors.ink;
-        return TMFocusRing(
-          focused: s.focused,
-          radius: Radii.sharp,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: Space.sm, horizontal: Space.xxs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppType.bodySmall.tone(ink).copyWith(
-                          decoration: s.hovered || s.focused
-                              ? TextDecoration.underline
-                              : TextDecoration.none,
-                          decorationColor: ink,
-                          decorationThickness: 1.2,
-                        ),
-                  ),
-                ),
-                const SizedBox(width: Space.sm),
-                TMRotatingIcon(
-                  TMIconName.chevronDown,
-                  turns: open ? 0.5 : 0,
-                  size: 15,
-                  color: ink,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
+String _andList(List<String> items) => switch (items.length) {
+      1 => items.first,
+      2 => '${items[0]} and ${items[1]}',
+      _ => '${items.take(items.length - 1).join(', ')} and ${items.last}',
+    };

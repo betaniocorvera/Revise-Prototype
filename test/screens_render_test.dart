@@ -4,7 +4,7 @@
 // This is not a behaviour test. It is the check that no screen overflows the
 // frame at the sizes the product claims to support: a small Android phone
 // (360), a mid-size phone (390) where the week grid is at its tightest, and a
-// laptop (1440) where the two-column shells engage.
+// laptop (1440) where the two-column shells and the dashboard rail engage.
 //
 // An overflow is a hard failure here, because a RenderFlex overflow stripe is
 // the one visual defect that a screenshot review reliably misses on the machine
@@ -21,14 +21,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tutormatch/data/mock_data.dart';
+import 'package:tutormatch/screens/chat_screen.dart';
+import 'package:tutormatch/screens/dashboard_screen.dart';
 import 'package:tutormatch/screens/landing_screen.dart';
 import 'package:tutormatch/screens/login_screen.dart';
-import 'package:tutormatch/screens/match_detail_screen.dart';
-import 'package:tutormatch/screens/matches_screen.dart';
-import 'package:tutormatch/screens/onboarding_screen.dart';
+import 'package:tutormatch/screens/messages_screen.dart';
+import 'package:tutormatch/screens/person_screen.dart';
 import 'package:tutormatch/screens/profile_screen.dart';
 import 'package:tutormatch/screens/register_screen.dart';
-import 'package:tutormatch/screens/requests_screen.dart';
 import 'package:tutormatch/state/app_state.dart';
 import 'package:tutormatch/theme/app_theme.dart';
 
@@ -76,8 +76,8 @@ void main() {
           ),
         ),
       );
-      // Long enough for the ranking pass on the matches screen and for every
-      // short state transition to have finished.
+      // Long enough for the searched state's skeleton delay and every short
+      // state transition to have finished.
       await tester.pump(const Duration(milliseconds: 1200));
     } finally {
       FlutterError.onError = previous;
@@ -94,6 +94,14 @@ void main() {
       reason: where,
     );
   }
+
+  /// A tab screen (search, messages, profile) is a column that normally lives
+  /// inside the dashboard's scroll view. Hosting it the same way here means the
+  /// test measures the width it gets in the product, not the full window.
+  Widget tab(Widget child) => Scaffold(
+        backgroundColor: AppColors.paper,
+        body: SingleChildScrollView(child: child),
+      );
 
   for (final Size size in _sizes) {
     final String at = '@${size.width.toInt()}px';
@@ -114,77 +122,118 @@ void main() {
           label: 'Login');
     });
 
-    testWidgets('onboarding renders for both roles $at', (WidgetTester tester) async {
-      await render(tester, const OnboardingScreen(role: Role.student), size,
-          label: 'Onboarding (student)');
-      await render(tester, const OnboardingScreen(role: Role.tutor), size,
-          label: 'Onboarding (tutor)');
-    });
-
-    testWidgets('the ranked list renders $at', (WidgetTester tester) async {
-      await render(tester, const MatchesScreen(), size, label: 'Matches');
-
-      final AppState answered = AppState()..profileAnswered = true;
-      await render(tester, const MatchesScreen(), size,
-          state: answered, label: 'Matches, first run after onboarding');
+    testWidgets('the dashboard renders in every state $at', (WidgetTester tester) async {
+      await render(tester, const DashboardScreen(), size,
+          label: 'Dashboard, nothing searched yet');
 
       final AppState tutor = AppState()..role = Role.tutor;
-      await render(tester, const MatchesScreen(), size,
-          state: tutor, label: 'Matches, tutor side');
-    });
+      await render(tester, const DashboardScreen(), size,
+          state: tutor, label: 'Dashboard, tutor side');
 
-    testWidgets('an impossible filter names its condition rather than breaking $at',
-        (WidgetTester tester) async {
-      final AppState narrowed = AppState()
+      final AppState searched = AppState()..searched = true;
+      await render(tester, const DashboardScreen(), size,
+          state: searched, label: 'Dashboard, after a search');
+
+      final AppState impossible = AppState()
+        ..searched = true
         ..filters = const MatchFilters(maxRate: 25);
-      await render(tester, const MatchesScreen(), size,
-          state: narrowed, label: 'Matches, empty state');
+      await render(tester, const DashboardScreen(), size,
+          state: impossible, label: 'Dashboard, a filter that removes everybody');
+
+      final AppState asked = AppState()
+        ..searched = true
+        ..openThread(sampleTutors.first, score: 71, asRequest: true);
+      await render(tester, const DashboardScreen(), size,
+          state: asked, label: 'Dashboard, one request already sent');
     });
 
-    testWidgets('match detail renders, including a match with no shared hours $at',
+    testWidgets('a person page renders, including with no shared hours $at',
         (WidgetTester tester) async {
       await render(
         tester,
-        MatchDetailScreen(result: landingSpecimen()),
+        PersonScreen(result: landingSpecimen()),
         size,
-        label: 'Match detail, best match',
+        label: 'Person, best match',
       );
 
       final List<MatchResult> students = rank(sampleStudents, demoTutorProfile);
       final AppState tutor = AppState()..role = Role.tutor;
       await render(
         tester,
-        MatchDetailScreen(result: students.first),
+        PersonScreen(result: students.first),
         size,
         state: tutor,
-        label: 'Match detail, tutor side',
+        label: 'Person, tutor side',
       );
       await render(
         tester,
-        MatchDetailScreen(
+        PersonScreen(
           result: students.firstWhere((MatchResult r) => r.score.overlapSlots == 0),
         ),
         size,
         state: tutor,
-        label: 'Match detail, no shared hours',
+        label: 'Person, no shared hours',
       );
     });
 
-    testWidgets('requests renders on both sides $at', (WidgetTester tester) async {
-      await render(tester, const RequestsScreen(), size, label: 'Requests sent');
+    testWidgets('the inbox renders on both sides, and empty $at',
+        (WidgetTester tester) async {
+      await render(tester, tab(MessagesScreen(onGoToSearch: () {})), size,
+          label: 'Messages (student)');
+
       final AppState tutor = AppState()..role = Role.tutor;
-      await render(tester, const RequestsScreen(), size,
-          state: tutor, label: 'Requests received');
+      await render(tester, tab(MessagesScreen(onGoToSearch: () {})), size,
+          state: tutor, label: 'Messages (tutor)');
+
+      final AppState quiet = AppState()..conversations.clear();
+      await render(tester, tab(MessagesScreen(onGoToSearch: () {})), size,
+          state: quiet, label: 'Messages, no conversations yet');
     });
 
-    testWidgets('profile renders on both sides $at', (WidgetTester tester) async {
-      await render(tester, const ProfileScreen(), size, label: 'Profile (student)');
+    testWidgets('every chat stage renders, on both sides $at',
+        (WidgetTester tester) async {
+      for (final Conversation thread in studentConversations()) {
+        await render(
+          tester,
+          ChatScreen(thread: thread),
+          size,
+          label: 'Chat, student side, ${thread.stage.label}',
+        );
+      }
+
       final AppState tutor = AppState()..role = Role.tutor;
-      await render(tester, const ProfileScreen(), size,
+      for (final Conversation thread in tutorConversations()) {
+        await render(
+          tester,
+          ChatScreen(thread: thread),
+          size,
+          state: tutor,
+          label: 'Chat, tutor side, ${thread.stage.label}',
+        );
+      }
+
+      final Conversation declined = studentConversations()[1]
+        ..stage = ChatStage.declined;
+      await render(tester, ChatScreen(thread: declined), size,
+          label: 'Chat, declined');
+
+      final Conversation blank =
+          AppState().openThread(sampleTutors.first, score: 82);
+      await render(tester, ChatScreen(thread: blank), size,
+          label: 'Chat, nothing said yet');
+    });
+
+    testWidgets('the profile renders on both sides $at', (WidgetTester tester) async {
+      await render(tester, tab(const ProfileScreen()), size,
+          label: 'Profile (student)');
+
+      final AppState tutor = AppState()..role = Role.tutor;
+      await render(tester, tab(const ProfileScreen()), size,
           state: tutor, label: 'Profile (tutor)');
     });
   }
 }
+
 /// Registers the two bundled families under the names the theme asks for, at
 /// every weight the type scale uses.
 Future<void> _loadBundledFonts() async {

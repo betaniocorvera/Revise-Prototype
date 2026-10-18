@@ -191,3 +191,33 @@ class TMInlineNote extends StatelessWidget {
     );
   }
 }
+
+/// The unread count, as a figure rather than a dot: "2" answers the question a
+/// dot leaves open. Accent, because unread is the one thing in the dashboard
+/// that genuinely needs attention — that is one of the accent's four jobs.
+class TMUnreadFigure extends StatelessWidget {
+  const TMUnreadFigure({required this.count, super.key});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$count unread',
+      excludeSemantics: true,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 20),
+        padding: const EdgeInsets.symmetric(horizontal: Space.sm - 2, vertical: 2),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.accent,
+          borderRadius: BorderRadius.circular(Radii.pill),
+        ),
+        child: Text(
+          '$count',
+          style: AppType.micro.copyWith(fontSize: 11, height: 1.2).tone(AppColors.onAccent),
+        ),
+      ),
+    );
+  }
+}

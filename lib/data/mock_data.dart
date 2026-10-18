@@ -20,11 +20,15 @@
 //   4. `applyFilters` and `MatchOutcome` are UI-side narrowing of an
 //      already-ranked list. They are not the recommender. The recommender
 //      ranks; the filters here only let a person interrogate the ranking.
-//   5. `sampleRequests` is a static inbox. Wire it to POST /requests.
+//   5. `studentConversations()` and `tutorConversations()` are the two sample
+//      inboxes — one thread per transaction, with the stage written on it.
+//      Wire them to GET /threads, and the stage changes to POST
+//      /threads/{id}/accept, /decline, /book, /confirm and /complete.
 //
 // The authored fit scores are calibrated against `demoStudentProfile` and
-// `demoTutorProfile` at the bottom of this file, which is what you see if you
-// skip onboarding. Walk the onboarding flow and the time dimension moves.
+// `demoTutorProfile` at the bottom of this file, which is what you land on via
+// the demo accounts on the sign-in screen. Edit a profile and the time
+// dimension moves.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:tutormatch/theme/app_theme.dart';
@@ -328,10 +332,16 @@ class Profile {
     required this.budget,
     required this.availability,
     required this.goal,
+    this.bio = '',
   });
 
   final Role role;
   final String name;
+
+  /// A short paragraph in the person's own voice. Read as a quotation on the
+  /// person page and in the preview of your own profile. It is the answer the
+  /// completeness indicator is most often missing, on purpose.
+  final String bio;
   final List<String> subjects;
   final String style;
   final SessionMode mode;
@@ -342,6 +352,7 @@ class Profile {
   Profile copyWith({
     Role? role,
     String? name,
+    String? bio,
     List<String>? subjects,
     String? style,
     SessionMode? mode,
@@ -352,6 +363,7 @@ class Profile {
       Profile(
         role: role ?? this.role,
         name: name ?? this.name,
+        bio: bio ?? this.bio,
         subjects: subjects ?? this.subjects,
         style: style ?? this.style,
         mode: mode ?? this.mode,
@@ -361,51 +373,116 @@ class Profile {
       );
 }
 
-enum RequestStatus { pending, accepted, declined }
+/// Where a transaction has got to. The four steps are the status bar at the top
+/// of every chat; [declined] is off the path and says so rather than pretending
+/// to be a step.
+enum ChatStage { requestSent, accepted, booked, completed, declined }
 
-extension RequestStatusCopy on RequestStatus {
+extension ChatStageCopy on ChatStage {
   String get label => switch (this) {
-        RequestStatus.pending => 'Pending',
-        RequestStatus.accepted => 'Accepted',
-        RequestStatus.declined => 'Rejected',
+        ChatStage.requestSent => 'Request sent',
+        ChatStage.accepted => 'Accepted',
+        ChatStage.booked => 'Session booked',
+        ChatStage.completed => 'Completed',
+        ChatStage.declined => 'Declined',
       };
 
   StatusTone get tone => switch (this) {
-        RequestStatus.pending => StatusTone.pending,
-        RequestStatus.accepted => StatusTone.accepted,
-        RequestStatus.declined => StatusTone.declined,
+        ChatStage.requestSent => StatusTone.pending,
+        ChatStage.accepted || ChatStage.booked || ChatStage.completed => StatusTone.accepted,
+        ChatStage.declined => StatusTone.declined,
       };
+
+  /// Position on the four-step bar. A declined thread sits at -1: the bar is
+  /// drawn as history with nothing current, because nothing is happening.
+  int get step => switch (this) {
+        ChatStage.requestSent => 0,
+        ChatStage.accepted => 1,
+        ChatStage.booked => 2,
+        ChatStage.completed => 3,
+        ChatStage.declined => -1,
+      };
+
+  /// The words under the four marks, in one place so the bar and the inbox pill
+  /// can never disagree.
+  static const List<String> steps = <String>[
+    'Request sent',
+    'Accepted',
+    'Session booked',
+    'Completed',
+  ];
 }
 
-/// A request that has left your outbox or arrived in your inbox.
-class MatchRequest {
-  const MatchRequest({
+/// One line in a thread. [mine] decides the side of the page; [system] lines are
+/// the transaction writing itself down (booked, accepted) and are centred like a
+/// printed note rather than bubbled like a person.
+class ChatMessage {
+  const ChatMessage(this.text, {required this.mine, required this.time})
+      : system = false;
+
+  const ChatMessage.system(this.text, {required this.time})
+      : mine = false,
+        system = true;
+
+  final String text;
+  final bool mine;
+  final bool system;
+  final String time;
+}
+
+/// One transaction: a person, a subject, and everything that has happened. The
+/// only mutable model in the file — the chat screen edits these in memory.
+class Conversation {
+  Conversation({
     required this.id,
     required this.counterpartId,
     required this.counterpartName,
     required this.counterpartRole,
     required this.subject,
     required this.score,
-    required this.status,
-    required this.sentOn,
-    required this.note,
-    this.reply,
-    this.outgoing = true,
+    required this.stage,
+    required this.messages,
+    this.unread = 0,
+    this.lastTime = 'Now',
+    this.confirmed = false,
+    this.bookingDay,
+    this.bookingTime,
+    this.bookingRate,
   });
 
   final String id;
   final String counterpartId;
   final String counterpartName;
   final Role counterpartRole;
-  final String subject;
-  final int score;
-  final RequestStatus status;
-  final String sentOn;
-  final String note;
 
-  /// The other side's answer, when there is one. Never "OK".
-  final String? reply;
-  final bool outgoing;
+  /// The subject the two of them are actually talking about.
+  final String subject;
+
+  /// What the ranking said when the thread started, kept so the chat header can
+  /// still say why these two were introduced.
+  final int score;
+
+  ChatStage stage;
+
+  /// True once the tutor has confirmed the booked slot. Session booked is the
+  /// student's action; confirming it is the tutor's, and the two are different
+  /// facts.
+  bool confirmed;
+  String? bookingDay;
+  String? bookingTime;
+  int? bookingRate;
+
+  int unread;
+  String lastTime;
+  final List<ChatMessage> messages;
+
+  String get firstCounterpartName => counterpartName.split(' ').first;
+
+  String? get preview => messages.isEmpty ? null : messages.last.text;
+
+  String? get bookingCopy => bookingDay == null
+      ? null
+      : '$bookingDay, $bookingTime · \$$bookingRate/hr';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -483,6 +560,7 @@ class MatchResult {
 
 class MatchFilters {
   const MatchFilters({
+    this.query = '',
     this.subjects = const <String>{},
     this.mode,
     this.maxRate = 80,
@@ -490,6 +568,11 @@ class MatchFilters {
     this.mustBeFreeWhenIAm = false,
     this.minScore = 0,
   });
+
+  /// The free-text search. Matched against names, subjects and style labels —
+  /// never against the bio, because a bio is prose and prose matches by
+  /// accident.
+  final String query;
 
   /// Empty means "any subject".
   final Set<String> subjects;
@@ -508,6 +591,7 @@ class MatchFilters {
   final double minScore;
 
   MatchFilters copyWith({
+    String? query,
     Set<String>? subjects,
     SessionMode? mode,
     bool clearMode = false,
@@ -517,6 +601,7 @@ class MatchFilters {
     double? minScore,
   }) =>
       MatchFilters(
+        query: query ?? this.query,
         subjects: subjects ?? this.subjects,
         mode: clearMode ? null : (mode ?? this.mode),
         maxRate: maxRate ?? this.maxRate,
@@ -526,6 +611,7 @@ class MatchFilters {
       );
 
   bool get isNarrowed =>
+      query.trim().isNotEmpty ||
       subjects.isNotEmpty ||
       mode != null ||
       maxRate < 80 ||
@@ -574,6 +660,13 @@ MatchOutcome applyFilters(
 
 bool _passes(MatchResult r, MatchFilters f) {
   final Candidate c = r.candidate;
+  if (f.query.trim().isNotEmpty) {
+    final String needle = f.query.trim().toLowerCase();
+    final String haystack = <String>[c.name, ...c.subjects, c.styleLabel]
+        .join(' ')
+        .toLowerCase();
+    if (!haystack.contains(needle)) return false;
+  }
   if (f.subjects.isNotEmpty && !f.subjects.any(c.subjects.contains)) return false;
   if (f.mode != null && !f.mode!.accepts(c.mode)) return false;
   if (f.maxRate < 80 && c.rate > f.maxRate) return false;
@@ -605,6 +698,24 @@ EmptyExplanation _explain(
 
   int count(MatchFilters candidate) =>
       ranked.where((MatchResult r) => _passes(r, candidate)).length;
+
+  // 0. The search word. It is the filter most likely to be the newest one, and
+  // the only one whose removal never argues with the ranking.
+  if (f.query.trim().isNotEmpty) {
+    final MatchFilters next = f.copyWith(query: '');
+    final int n = count(next);
+    if (n > 0) {
+      options.add((
+        headline: 'Nothing matches "${f.query.trim()}".',
+        body: 'The search word is removing everybody. Searching the whole pool '
+            'shows $n of the ${ranked.length} ranked candidates — the order does '
+            'not change either way, because it was never built from the word.',
+        label: 'Search the whole pool',
+        next: next,
+        n: n,
+      ));
+    }
+  }
 
   // 1. Time — the most common blocker and the one people least expect.
   if (f.mustBeFreeWhenIAm || f.requiredParts.isNotEmpty) {
@@ -713,7 +824,7 @@ EmptyExplanation _explain(
             'is empty before any filter is applied. That is a data problem on '
             'our side, not something about your profile — there is no filter '
             'here that would fix it.',
-        adjustLabel: 'Go back to the form',
+        adjustLabel: 'Clear every filter',
         relaxed: const MatchFilters(),
         recovered: 0,
       );
@@ -1763,10 +1874,10 @@ final List<Candidate> sampleStudents = <Candidate>[
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Onboarding options — the answer sets the recommender can actually use
+// Profile options — the answer sets the recommender can actually use
 // ═════════════════════════════════════════════════════════════════════════════
 
-abstract final class OnboardingOptions {
+abstract final class ProfileOptions {
   static const List<String> subjects = <String>[
     'Algebra',
     'Geometry',
@@ -1818,210 +1929,347 @@ abstract final class OnboardingOptions {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Requests — a static inbox per side, so the three tabs have something honest
-// in them. A student reads [sampleRequests] (their outbox); a tutor reads
-// [sampleReceivedRequests] (their inbox). Same six shapes either way, written
-// from the side that actually wrote them.
+// Conversations — one thread per transaction, with its stage on it.
+//
+// A student reads [studentConversations] (their own inbox); a tutor reads
+// [tutorConversations]. Both are written from the side that is reading them, so
+// "mine" is always the person holding the phone. Four threads per side, one at
+// each stage of the four-step bar: request sent, accepted, booked, completed.
+//
+// They are functions, not lists, because the chat mutates them in memory —
+// messages, stage, unread counts — and a hot reload should not inherit
+// yesterday's typing.
 // ═════════════════════════════════════════════════════════════════════════════
 
-const List<MatchRequest> sampleRequests = <MatchRequest>[
-  MatchRequest(
-    id: 'r-1041',
-    counterpartId: 't-amara',
-    counterpartName: 'Amara Okonkwo',
-    counterpartRole: Role.tutor,
-    subject: 'Calculus',
-    score: 93,
-    status: RequestStatus.accepted,
-    sentOn: 'Sent Mon 6 Oct',
-    note: 'Mock in eleven weeks. Weekday evenings after 6, and I can do Saturday morning if that is easier for you.',
-    reply: 'Yes — I have Tuesday and Thursday free from next week. Send me your last mock paper and I will look at it before we start.',
-  ),
-  MatchRequest(
-    id: 'r-1038',
-    counterpartId: 't-liang',
-    counterpartName: 'Liang Chen',
-    counterpartRole: Role.tutor,
-    subject: 'Calculus and Physics',
-    score: 82,
-    status: RequestStatus.pending,
-    sentOn: 'Sent Sun 5 Oct',
-    note: 'Interested in both subjects together if that works. I am free Tuesday and Friday evenings.',
-  ),
-  MatchRequest(
-    id: 'r-1036',
-    counterpartId: 't-hana',
-    counterpartName: 'Hana Suzuki',
-    counterpartRole: Role.tutor,
-    subject: 'Physics',
-    score: 77,
-    status: RequestStatus.pending,
-    sentOn: 'Sent Fri 3 Oct',
-    note: 'Would you start with mechanics or electricity? I am weaker on mechanics.',
-  ),
-  MatchRequest(
-    id: 'r-1030',
-    counterpartId: 't-marcus',
-    counterpartName: 'Marcus Bell',
-    counterpartRole: Role.tutor,
-    subject: 'Essay Writing',
-    score: 61,
-    status: RequestStatus.declined,
-    sentOn: 'Sent Tue 30 Sep',
-    note: 'I know you are in person only — I could travel on Thursdays if that is possible.',
-    reply: 'Afraid not — my Thursdays filled up for the term. Rachel Osei does the same work online and she is good. Worth trying her.',
-  ),
-  MatchRequest(
-    id: 'r-1029',
-    counterpartId: 't-evelyn',
-    counterpartName: 'Evelyn Marsh',
-    counterpartRole: Role.tutor,
-    subject: 'Music Theory',
-    score: 44,
-    status: RequestStatus.declined,
-    sentOn: 'Sent Mon 29 Sep',
-    note: 'Long shot — you are in Bath and I am not, but I wanted to ask about online grade 5 theory.',
-    reply: 'I only teach in person, I am afraid. For grade 5 theory online, try the ABRSM practice papers first — most people need less teaching than they think there.',
-  ),
-  MatchRequest(
-    id: 'r-1044',
-    counterpartId: 't-greta',
-    counterpartName: 'Greta Lindqvist',
-    counterpartRole: Role.tutor,
-    subject: 'Statistics',
-    score: 71,
-    status: RequestStatus.pending,
-    sentOn: 'Sent Wed 8 Oct',
-    note: 'Are you taking on new students in January? I would rather wait for a slot than start with someone else.',
-  ),
+/// The dates, times and rates a student can pick when booking. Fixed strings
+/// rather than computed ones, so the prototype reads identically on any machine
+/// and in any screenshot.
+const List<String> bookingDays = <String>[
+  'Tue 21 Oct',
+  'Wed 22 Oct',
+  'Thu 23 Oct',
+  'Sat 25 Oct',
+  'Mon 27 Oct',
 ];
 
-/// Students' requests, as the tutor sees them: the mirror of [sampleRequests].
-/// Written from the side that actually wrote them, and scored against
-/// [demoTutorProfile], so a tutor's inbox is never another tutor's outbox
-/// wearing their name.
-const List<MatchRequest> sampleReceivedRequests = <MatchRequest>[
-  MatchRequest(
-    id: 'r-2011',
-    counterpartId: 's-maya',
-    counterpartName: 'Maya Chen',
-    counterpartRole: Role.student,
-    subject: 'Calculus and Physics',
-    score: 87,
-    status: RequestStatus.accepted,
-    sentOn: 'Sent Mon 6 Oct',
-    outgoing: false,
-    note: 'Mock in eleven weeks, so I am working backwards from it. I have all '
-        'the past papers printed already — could we start Monday or Tuesday '
-        'evening after six?',
-    reply: 'Yes — Tuesday and Thursday evenings are free from next week. Send '
-        'me your last mock paper and we will spend the first hour on the '
-        'questions that cost you marks.',
-  ),
-  MatchRequest(
-    id: 'r-2009',
-    counterpartId: 's-aisha',
-    counterpartName: 'Aisha Rahman',
-    counterpartRole: Role.student,
-    subject: 'Statistics',
-    score: 83,
-    status: RequestStatus.pending,
-    sentOn: 'Sent Wed 8 Oct',
-    outgoing: false,
-    note: 'Grade 8 predicted and I need a 9 for the course I want. I do not '
-        'need the ideas explained again — I need speed under time pressure '
-        'and fewer careless errors.',
-  ),
-  MatchRequest(
-    id: 'r-2006',
-    counterpartId: 's-ethan',
-    counterpartName: 'Ethan Brooks',
-    counterpartRole: Role.student,
-    subject: 'Calculus',
-    score: 76,
-    status: RequestStatus.pending,
-    sentOn: 'Sent Sun 5 Oct',
-    outgoing: false,
-    note: 'I have exactly one free morning a week. I would rather use Saturday '
-        'mornings properly, two hours at a time, than squeeze an evening in. '
-        'I want the derivations, not shortcuts.',
-  ),
-  MatchRequest(
-    id: 'r-2004',
-    counterpartId: 's-kai',
-    counterpartName: 'Kai Nakamura',
-    counterpartRole: Role.student,
-    subject: 'Statistics',
-    score: 70,
-    status: RequestStatus.pending,
-    sentOn: 'Sent Fri 3 Oct',
-    outgoing: false,
-    note: 'Three years of cycling data and a half-finished analysis. Could the '
-        'lessons be about finishing that properly rather than starting a '
-        'textbook from chapter one?',
-  ),
-  MatchRequest(
-    id: 'r-2001',
-    counterpartId: 's-sofia',
-    counterpartName: 'Sofia Marino',
-    counterpartRole: Role.student,
-    subject: 'Essay Writing',
-    score: 44,
-    status: RequestStatus.declined,
-    sentOn: 'Sent Tue 30 Sep',
-    outgoing: false,
-    note: 'My ideas are fine and my structure falls apart. Could you read a '
-        'draft and tell me which paragraph to cut?',
-    reply: 'I only teach maths and the sciences, I am afraid. Claire Dubois '
-        'and Rachel Osei both do this work online, and they are good.',
-  ),
-  MatchRequest(
-    id: 'r-1998',
-    counterpartId: 's-owen',
-    counterpartName: 'Owen Pratt',
-    counterpartRole: Role.student,
-    subject: 'Algebra',
-    score: 44,
-    status: RequestStatus.declined,
-    sentOn: 'Sent Mon 29 Sep',
-    outgoing: false,
-    note: 'I lost the thread somewhere in year 8 and nobody noticed. I would '
-        'rather rebuild it than keep pretending. I can do weekday afternoons, '
-        'in person if that is easier.',
-    reply: 'I teach online, and my week is mostly evenings — Daniel Reyes '
-        'teaches in Camden in the afternoons and would be the better fit.',
-  ),
+const List<String> bookingTimes = <String>[
+  '10:00',
+  '12:00',
+  '16:00',
+  '18:00',
+  '19:00',
 ];
 
+const List<int> bookingRates = <int>[30, 35, 40, 45, 50, 55, 60];
+
+/// Maya Chen's threads, as she reads them: four tutors, one stage each.
+List<Conversation> studentConversations() => <Conversation>[
+      Conversation(
+        id: 'c-amara',
+        counterpartId: 't-amara',
+        counterpartName: 'Amara Okonkwo',
+        counterpartRole: Role.tutor,
+        subject: 'Calculus',
+        score: 93,
+        stage: ChatStage.accepted,
+        unread: 1,
+        lastTime: 'Tue 10:42',
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Mon 6 Oct', time: 'Mon 09:15'),
+          ChatMessage(
+            'Hi Amara — I have the mock in eleven weeks and I am losing marks on '
+            'the harder calculus questions. Could we start with Tuesday evening?',
+            mine: true,
+            time: 'Mon 09:15',
+          ),
+          ChatMessage(
+            'Tuesday and Thursday evenings are both free from next week. Send me '
+            'your last mock paper and I will read it before we start.',
+            mine: false,
+            time: 'Mon 20:04',
+          ),
+          ChatMessage.system('You can book a session now', time: 'Mon 20:04'),
+          ChatMessage(
+            'I went through your mock while I was waiting: integration by parts '
+            'and the related-rates questions are where the marks go. Bring both '
+            'to the first session.',
+            mine: false,
+            time: 'Tue 10:42',
+          ),
+        ],
+      ),
+      Conversation(
+        id: 'c-liang',
+        counterpartId: 't-liang',
+        counterpartName: 'Liang Chen',
+        counterpartRole: Role.tutor,
+        subject: 'Calculus and Physics',
+        score: 82,
+        stage: ChatStage.requestSent,
+        lastTime: 'Sun 18:20',
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Sun 5 Oct', time: 'Sun 18:20'),
+          ChatMessage(
+            'Interested in both subjects together if that works. I am free '
+            'Tuesday and Friday evenings, and I would rather start with the '
+            'harder calculus questions than the ones I can already do.',
+            mine: true,
+            time: 'Sun 18:20',
+          ),
+        ],
+      ),
+      Conversation(
+        id: 'c-hana',
+        counterpartId: 't-hana',
+        counterpartName: 'Hana Suzuki',
+        counterpartRole: Role.tutor,
+        subject: 'Physics',
+        score: 77,
+        stage: ChatStage.booked,
+        lastTime: 'Fri 16:31',
+        bookingDay: 'Sat 25 Oct',
+        bookingTime: '10:00',
+        bookingRate: 52,
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Fri 3 Oct', time: 'Fri 09:02'),
+          ChatMessage(
+            'Would you start with mechanics or electricity? I am weaker on '
+            'mechanics and I have a folder of past papers already printed.',
+            mine: true,
+            time: 'Fri 09:02',
+          ),
+          ChatMessage(
+            'Mechanics first, then electricity once the diagrams stop being a '
+            'fight. I keep Saturday mornings open — 10:00 suits me best.',
+            mine: false,
+            time: 'Fri 12:48',
+          ),
+          ChatMessage.system(
+            'Session booked · Sat 25 Oct, 10:00, \$52/hr',
+            time: 'Fri 16:31',
+          ),
+          ChatMessage(
+            'See you Saturday. I will bring the mechanics questions and the '
+            'paper we marked up.',
+            mine: true,
+            time: 'Fri 16:31',
+          ),
+        ],
+      ),
+      Conversation(
+        id: 'c-greta',
+        counterpartId: 't-greta',
+        counterpartName: 'Greta Lindqvist',
+        counterpartRole: Role.tutor,
+        subject: 'Statistics',
+        score: 71,
+        stage: ChatStage.completed,
+        lastTime: '2 Oct',
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Wed 24 Sep', time: 'Wed 19:30'),
+          ChatMessage(
+            'I only need statistics for one piece of coursework. Could we work '
+            'on the dataset I already have rather than start from chapter one?',
+            mine: true,
+            time: 'Wed 19:30',
+          ),
+          ChatMessage(
+            'That is the right way round. Send me the file before Thursday and '
+            'we will spend the first session on the one analysis you actually '
+            'need.',
+            mine: false,
+            time: 'Thu 08:15',
+          ),
+          ChatMessage.system('Session completed · 2 Oct', time: '2 Oct'),
+          ChatMessage(
+            'Thank you — the regression finally reads like a sentence rather '
+            'than a receipt.',
+            mine: true,
+            time: '2 Oct',
+          ),
+        ],
+      ),
+    ];
+
+/// Amara Okonkwo's threads, as she reads them — the demo tutor account. The
+/// one that needs her answer (a request) sits first and unread, so the tutor
+/// side of the dashboard opens onto something to do.
+///
+/// Where the same transaction appears on both demo accounts (Amara and Maya),
+/// the stage and the words agree; the two inboxes are the same conversation
+/// seen from either side of the table.
+List<Conversation> tutorConversations() => <Conversation>[
+      Conversation(
+        id: 'c-ethan',
+        counterpartId: 's-ethan',
+        counterpartName: 'Ethan Brooks',
+        counterpartRole: Role.student,
+        subject: 'Calculus',
+        score: 76,
+        stage: ChatStage.requestSent,
+        unread: 2,
+        lastTime: 'Sat 08:12',
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Sat 08:12', time: 'Sat 08:12'),
+          ChatMessage(
+            'I have exactly one free morning a week, so I would rather use '
+            'Saturday properly, two hours at a time, than squeeze in an evening. '
+            'I want the derivations, not shortcuts.',
+            mine: false,
+            time: 'Sat 08:12',
+          ),
+          ChatMessage(
+            'Also — could we start with the proof questions? I can already do '
+            'the mechanics ones.',
+            mine: false,
+            time: 'Sat 08:12',
+          ),
+        ],
+      ),
+      Conversation(
+        id: 'c-maya',
+        counterpartId: 's-maya',
+        counterpartName: 'Maya Chen',
+        counterpartRole: Role.student,
+        subject: 'Calculus and Physics',
+        score: 87,
+        stage: ChatStage.accepted,
+        lastTime: 'Mon 20:04',
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Mon 6 Oct', time: 'Mon 09:15'),
+          ChatMessage(
+            'Mock in eleven weeks, so I am working backwards from it. I have the '
+            'past papers printed already — could we start Monday or Tuesday '
+            'evening after six?',
+            mine: false,
+            time: 'Mon 09:15',
+          ),
+          ChatMessage(
+            'Tuesday and Thursday evenings are free from next week. Send me your '
+            'last mock paper and I will read it before we start.',
+            mine: true,
+            time: 'Mon 20:04',
+          ),
+          ChatMessage.system(
+            'Request accepted · Maya can book a time now',
+            time: 'Mon 20:04',
+          ),
+        ],
+      ),
+      Conversation(
+        id: 'c-kai',
+        counterpartId: 's-kai',
+        counterpartName: 'Kai Nakamura',
+        counterpartRole: Role.student,
+        subject: 'Statistics',
+        score: 70,
+        stage: ChatStage.booked,
+        unread: 1,
+        lastTime: 'Tue 19:02',
+        bookingDay: 'Tue 21 Oct',
+        bookingTime: '19:00',
+        bookingRate: 46,
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Fri 3 Oct', time: 'Fri 17:20'),
+          ChatMessage(
+            'Three years of cycling data and a half-finished analysis. Could the '
+            'lessons be about finishing it properly rather than starting a '
+            'textbook from chapter one?',
+            mine: false,
+            time: 'Fri 17:20',
+          ),
+          ChatMessage.system('Request accepted · Mon 6 Oct', time: 'Mon 07:50'),
+          ChatMessage(
+            'Then we finish it. Send the file before Tuesday and I will mark up '
+            'where the analysis goes soft.',
+            mine: true,
+            time: 'Mon 07:50',
+          ),
+          ChatMessage(
+            'Booked Tuesday 19:00 — does that still work with your marking '
+            'deadlines?',
+            mine: false,
+            time: 'Mon 21:10',
+          ),
+          ChatMessage.system(
+            'Session booked · Tue 21 Oct, 19:00, \$46/hr',
+            time: 'Mon 21:10',
+          ),
+          ChatMessage(
+            'I will bring the spreadsheet with the broken join. Bring your '
+            'patience.',
+            mine: false,
+            time: 'Tue 19:02',
+          ),
+        ],
+      ),
+      Conversation(
+        id: 'c-aisha',
+        counterpartId: 's-aisha',
+        counterpartName: 'Aisha Rahman',
+        counterpartRole: Role.student,
+        subject: 'Statistics',
+        score: 83,
+        stage: ChatStage.completed,
+        lastTime: '28 Sep',
+        messages: <ChatMessage>[
+          ChatMessage.system('Request sent · Wed 17 Sep', time: 'Wed 21:05'),
+          ChatMessage(
+            'Grade 8 predicted and I need a 9 for the course I want. I do not '
+            'need the ideas explained again — I need speed under time pressure '
+            'and fewer careless errors.',
+            mine: false,
+            time: 'Wed 21:05',
+          ),
+          ChatMessage(
+            'Then we do timed sections and you keep an error log. I have run '
+            'this with six students and it works if you bring the log every '
+            'week — one page, three columns: question, what went wrong, fix.',
+            mine: true,
+            time: 'Thu 08:30',
+          ),
+          ChatMessage.system('Session completed · 28 Sep', time: '28 Sep'),
+          ChatMessage(
+            'Got the 9. The error log is the reason. Thank you.',
+            mine: false,
+            time: '28 Sep',
+          ),
+        ],
+      ),
+    ];
+
 // ═════════════════════════════════════════════════════════════════════════════
-// The two profiles you land on if you skip onboarding
+// The two profiles behind the demo accounts
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// The student you are if you open the app and skip the form. Chosen so the
-/// default list has a clear top, a muddle in the middle and some honest bad
+/// The student behind the demo account on the sign-in screen. Chosen so the
+/// default pool has a clear top, a muddle in the middle and some honest bad
 /// matches at the bottom — a real ranking, not a wall of 99s.
+///
+/// The bio is deliberately empty: it is the one answer the completeness
+/// indicator is most often missing, so the demo has something to complete.
 final Profile demoStudentProfile = Profile(
   role: Role.student,
   name: 'Maya Chen',
   subjects: const <String>['Calculus', 'Physics', 'Algebra'],
-  style: OnboardingOptions.studentStyles[0],
+  style: ProfileOptions.studentStyles[0],
   mode: SessionMode.both,
   budget: 50,
   availability: avail(const <String>['Mon-Eve', 'Tue-Eve', 'Wed-Eve', 'Thu-Eve', 'Sat-Morn']),
-  goal: OnboardingOptions.studentGoals[1],
+  goal: ProfileOptions.studentGoals[1],
 );
 
-/// The tutor you are if you open the app and skip the form. Calibrated against
-/// Amara Okonkwo's real availability, since her card is the landing specimen.
+/// The tutor behind the demo account. Calibrated against Amara Okonkwo's real
+/// availability, since her card is the landing specimen.
 final Profile demoTutorProfile = Profile(
   role: Role.tutor,
   name: 'Amara Okonkwo',
   subjects: const <String>['Calculus', 'Statistics', 'Algebra'],
-  style: OnboardingOptions.tutorStyles[0],
+  style: ProfileOptions.tutorStyles[0],
   mode: SessionMode.both,
   budget: 46,
   availability: avail(const <String>['Mon-Eve', 'Tue-Eve', 'Thu-Eve', 'Sat-Morn']),
-  goal: OnboardingOptions.tutorGoals[0],
+  goal: ProfileOptions.tutorGoals[0],
 );
 
 /// The specimen shown on the landing page: the top-ranked tutor for the demo

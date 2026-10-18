@@ -24,6 +24,9 @@ enum TMIconName {
   menu,
   close,
   sliders,
+  search,
+  message,
+  person,
 }
 
 class TMIcon extends StatelessWidget {
@@ -139,6 +142,28 @@ class _TMIconPainter extends CustomPainter {
         canvas.drawLine(at(3.5, 16), at(20.5, 16), p);
         canvas.drawRect(Rect.fromCenter(center: at(9, 8), width: 4.5 * s, height: 7 * s), p);
         canvas.drawRect(Rect.fromCenter(center: at(15.5, 16), width: 4.5 * s, height: 7 * s), p);
+
+      case TMIconName.search:
+        // A lens and a handle, drawn as a stroke circle so it weighs the same
+        // as the rules around it.
+        canvas.drawCircle(at(10.5, 10.5), 6.5 * s, p);
+        canvas.drawLine(at(15.4, 15.4), at(20.5, 20.5), p);
+
+      case TMIconName.message:
+        // A speech box with its tail let out of the bottom edge.
+        canvas.drawRect(Rect.fromLTRB(3.5 * s, 5 * s, 20.5 * s, 17 * s), p);
+        canvas.drawLine(at(8, 17), at(8, 21), p);
+        canvas.drawLine(at(8, 21), at(12.5, 17), p);
+
+      case TMIconName.person:
+        canvas.drawCircle(at(12, 8.25), 3.9 * s, p);
+        canvas.drawArc(
+          Rect.fromCircle(center: at(12, 21.5), radius: 7.2 * s),
+          3.14159, // π: the top half only, so it reads as shoulders
+          3.14159,
+          false,
+          p,
+        );
     }
   }
 

@@ -32,6 +32,7 @@ class AvailabilityGrid extends StatelessWidget {
     this.cellHeight = 15,
     this.dayLabels = true,
     this.partLabels = true,
+    this.semanticLabel,
     super.key,
   }) : assert(
           display == AvailabilityDisplay.overlapOnly || (you != null && them != null),
@@ -51,13 +52,18 @@ class AvailabilityGrid extends StatelessWidget {
   final bool dayLabels;
   final bool partLabels;
 
+  /// Replaces the default "free for both of you" announcement when the grid is
+  /// not comparing two people — on your own profile, where the filled cells are
+  /// your week and nobody else's.
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final double labelWidth = partLabels ? 30 : 0;
     final int filled = overlap.where((bool c) => c).length;
 
     return Semantics(
-      label: '$filled of 21 half-day blocks are free for both of you',
+      label: semanticLabel ?? '$filled of 21 half-day blocks are free for both of you',
       excludeSemantics: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

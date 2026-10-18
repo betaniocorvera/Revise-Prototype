@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Register.
 //
-// Three fields, because three is what the rest of the product needs. Signing up
-// with Google and signing up with an email are presented as equal alternatives
-// rather than one primary and one afterthought, and both do the same thing:
-// move to onboarding. There is no account, because there is no server.
+// Three fields and the role, because that is all the rest of the product needs.
+// Signing up with Google and signing up with an email are presented as equal
+// alternatives rather than one primary and one afterthought, and both do the
+// same thing: open the dashboard. There is no account, because there is no
+// server.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
@@ -63,15 +64,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (trimmed.isNotEmpty) {
       state.profile = state.profile.copyWith(name: trimmed);
     }
-    state.profileAnswered = false;
     // A real sign-up is a round trip. Held for a beat so the busy state is a
     // state and not a flash, and so the label has time to be read.
     Future<void>.delayed(const Duration(milliseconds: 520), () {
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(
-        Routes.onboarding,
-        arguments: _role,
-      );
+      Navigator.of(context).pushReplacementNamed(Routes.dashboard);
     });
   }
 
@@ -81,11 +78,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       role: _role,
       onRoleChanged: (Role r) => setState(() => _role = r),
       title: 'Create your account',
-      lede: 'Two things, then five questions. Nothing you type here is stored, '
-          'sent or checked against anything.',
+      lede: 'Two things and the role you are here as. The questions that decide '
+          'who you see live on your profile, where you can read what each one is '
+          'for — not in a wall in front of the product. Nothing you type here is '
+          'stored, sent or checked against anything.',
       nextSteps: const <String>[
-        'Five questions about subjects, how you like to work, and the hours you actually keep free.',
-        'A ranked list, with the score, three reasons, and the hours you both have open.',
+        'A dashboard with three sections: search, messages, and your profile.',
+        'Your first results only when you search — ranked best fit first, with '
+            'the reasons written out.',
         'Nothing is saved. Reload the page and you are back at the start.',
       ],
       switchPrompt: 'Already have an account?',
@@ -141,7 +141,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(height: Space.xl),
             TMButton(
-              label: 'Create account and answer five questions',
+              label: 'Create account and open the dashboard',
               expand: true,
               busy: _busy,
               busyLabel: 'Creating your account…',

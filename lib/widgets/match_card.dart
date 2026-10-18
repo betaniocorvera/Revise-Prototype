@@ -53,9 +53,9 @@ class MatchResultCard extends StatelessWidget {
   final int rank;
   final bool lead;
 
-  /// Shows the "based on your profile" tag. True for anyone who has just
-  /// answered the onboarding questions, because their answers are the thing
-  /// producing this order and it would be dishonest to hide that.
+  /// Shows the "based on your profile" tag. True for the lead card of a
+  /// search, because the profile is what produced this order and it would be
+  /// dishonest to hide that — on the rest of the list it would just be noise.
   final bool fromProfile;
   final String? profileSummary;
 
@@ -334,7 +334,7 @@ class _ProfileTag extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: summary == null
-          ? 'Ranked using the answers you just gave.'
+          ? 'Ranked using your profile answers.'
           : 'Ranked using: $summary',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: Space.xs),
@@ -486,7 +486,8 @@ class _Actions extends StatelessWidget {
           const SizedBox(width: Space.md),
           Flexible(
             child: Text(
-              'You have already asked. You will hear back here.',
+              'You have already asked. The thread — and the answer — live in '
+              'Messages.',
               style: AppType.bodySmall.quieter,
             ),
           ),

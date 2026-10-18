@@ -130,4 +130,78 @@ void main() {
       expect(out.results.length, ranked.length);
     });
   });
+
+  group('the search word', () {
+    test('narrows to names and subjects, and offers one tap back when it misses', () {
+      final List<MatchResult> ranked = rank(sampleTutors, demoStudentProfile);
+
+      final MatchOutcome hit = applyFilters(
+        ranked,
+        const MatchFilters(query: 'statistics'),
+        demoStudentProfile,
+      );
+      expect(hit.results, isNotEmpty);
+      expect(
+        hit.results.every((MatchResult r) =>
+            r.candidate.subjects.contains('Statistics') ||
+            r.candidate.name.toLowerCase().contains('statistics')),
+        isTrue,
+      );
+
+      final MatchOutcome miss = applyFilters(
+        ranked,
+        const MatchFilters(query: 'astrophysics'),
+        demoStudentProfile,
+      );
+      expect(miss.results, isEmpty);
+      final EmptyExplanation empty = miss.empty!;
+      expect(empty.headline, contains('astrophysics'));
+      // The way back is the word, not the whole profile.
+      expect(empty.relaxed.query, '');
+      expect(
+        applyFilters(ranked, empty.relaxed, demoStudentProfile).results.length,
+        empty.recovered,
+      );
+    });
+  });
+
+  group('conversations', () {
+    test('each demo inbox holds one thread at each stage of the path', () {
+      const Set<ChatStage> stages = <ChatStage>{
+        ChatStage.requestSent,
+        ChatStage.accepted,
+        ChatStage.booked,
+        ChatStage.completed,
+      };
+      for (final List<Conversation> inbox in <List<Conversation>>[
+        studentConversations(),
+        tutorConversations(),
+      ]) {
+        expect(inbox.length, stages.length);
+        expect(inbox.map((Conversation c) => c.stage).toSet(), stages);
+      }
+    });
+
+    test('a thread is written from the side holding it', () {
+      expect(
+        studentConversations()
+            .every((Conversation c) => c.counterpartRole == Role.tutor),
+        isTrue,
+      );
+      expect(
+        tutorConversations()
+            .every((Conversation c) => c.counterpartRole == Role.student),
+        isTrue,
+      );
+    });
+
+    test('the four steps are stated, and declined is off the path', () {
+      expect(ChatStageCopy.steps.length, 4);
+      expect(ChatStage.requestSent.step, 0);
+      expect(ChatStage.accepted.step, 1);
+      expect(ChatStage.booked.step, 2);
+      expect(ChatStage.completed.step, 3);
+      expect(ChatStage.declined.step, -1);
+    });
+  });
 }

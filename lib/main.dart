@@ -4,22 +4,21 @@
 // Interface only. There is no backend, no database, no network call and no real
 // K-nearest-neighbours pass; every tutor, student, score and review comes from
 // lib/data/mock_data.dart. Google sign-in and email/password both simply move to
-// the next screen, which is the entire behaviour they are asked to have.
+// the dashboard, which is the entire behaviour they are asked to have.
 //
-// Routing is one switch in [onGenerateRoute]. No router package: there are eight
-// screens and they all take plain arguments.
+// Routing is one switch in [onGenerateRoute]. No router package: the six screens
+// take plain arguments, and the two that need one take the exact object the
+// previous screen was already showing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
 import 'package:tutormatch/data/mock_data.dart';
+import 'package:tutormatch/screens/chat_screen.dart';
+import 'package:tutormatch/screens/dashboard_screen.dart';
 import 'package:tutormatch/screens/landing_screen.dart';
 import 'package:tutormatch/screens/login_screen.dart';
-import 'package:tutormatch/screens/match_detail_screen.dart';
-import 'package:tutormatch/screens/matches_screen.dart';
-import 'package:tutormatch/screens/onboarding_screen.dart';
-import 'package:tutormatch/screens/profile_screen.dart';
+import 'package:tutormatch/screens/person_screen.dart';
 import 'package:tutormatch/screens/register_screen.dart';
-import 'package:tutormatch/screens/requests_screen.dart';
 import 'package:tutormatch/state/app_state.dart';
 import 'package:tutormatch/theme/app_theme.dart';
 
@@ -31,11 +30,9 @@ abstract final class Routes {
   static const String landing = '/';
   static const String register = '/register';
   static const String login = '/login';
-  static const String onboarding = '/onboarding';
-  static const String matches = '/matches';
-  static const String matchDetail = '/match';
-  static const String requests = '/requests';
-  static const String profile = '/profile';
+  static const String dashboard = '/dashboard';
+  static const String person = '/person';
+  static const String chat = '/chat';
 }
 
 class TutorMatchApp extends StatefulWidget {
@@ -64,8 +61,8 @@ class _TutorMatchAppState extends State<TutorMatchApp> {
         theme: AppTheme.light(),
         initialRoute: Routes.landing,
         onGenerateRoute: _route,
-        // Keyboard order follows reading order, which matters most on the
-        // onboarding form where every answer is a control.
+        // Keyboard order follows reading order, which matters most in the
+        // profile's edit form and the booking form inside a chat.
         builder: (BuildContext context, Widget? child) => FocusTraversalGroup(
           policy: ReadingOrderTraversalPolicy(),
           child: child ?? const SizedBox.shrink(),
@@ -87,18 +84,14 @@ class _TutorMatchAppState extends State<TutorMatchApp> {
       case Routes.login:
         final Role role = args is Role ? args : Role.student;
         return build(LoginScreen(initialRole: role));
-      case Routes.onboarding:
-        final Role role = args is Role ? args : Role.student;
-        return build(OnboardingScreen(role: role));
-      case Routes.matches:
-        return build(const MatchesScreen());
-      case Routes.matchDetail:
-        if (args is MatchResult) return build(MatchDetailScreen(result: args));
-        return build(const MatchesScreen());
-      case Routes.requests:
-        return build(const RequestsScreen());
-      case Routes.profile:
-        return build(const ProfileScreen());
+      case Routes.dashboard:
+        return build(const DashboardScreen());
+      case Routes.person:
+        if (args is MatchResult) return build(PersonScreen(result: args));
+        return build(const DashboardScreen());
+      case Routes.chat:
+        if (args is Conversation) return build(ChatScreen(thread: args));
+        return build(const DashboardScreen());
       case Routes.landing:
       default:
         return build(const LandingScreen());

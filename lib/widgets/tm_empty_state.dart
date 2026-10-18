@@ -21,6 +21,7 @@ class TMEmptyState extends StatelessWidget {
   const TMEmptyState({
     required this.headline,
     required this.body,
+    this.extra,
     this.primaryLabel,
     this.onPrimary,
     this.secondaryLabel,
@@ -34,6 +35,10 @@ class TMEmptyState extends StatelessWidget {
   /// evenings." Written as a statement of fact, never as an apology.
   final String headline;
   final String body;
+
+  /// A screen's own addition between the body and the buttons — the suggested
+  /// subject chips on the pre-search state, and nothing else so far.
+  final Widget? extra;
 
   final String? primaryLabel;
   final VoidCallback? onPrimary;
@@ -84,6 +89,10 @@ class TMEmptyState extends StatelessWidget {
             width: 560,
             child: Text(body, style: AppType.bodyLarge.quiet),
           ),
+          if (extra != null) ...<Widget>[
+            const SizedBox(height: Space.xl),
+            extra!,
+          ],
           if (filters.isNotEmpty) ...<Widget>[
             const SizedBox(height: Space.xl),
             const TMRule(),
